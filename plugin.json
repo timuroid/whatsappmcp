@@ -1,0 +1,15 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "whatsapp-history",
+  "version": "0.1.0",
+  "description": "Read-only search of a selected WhatsApp archive.",
+  "extensions": {
+    "com.openai": {
+      "interface": {
+        "displayName": "История WhatsApp",
+        "shortDescription": "Поиск по истории WhatsApp",
+        "defaultPrompt": "Найди в выбранных чатах WhatsApp, что решили по срокам, и приведи источники."
+      }
+    }
+  }
+}

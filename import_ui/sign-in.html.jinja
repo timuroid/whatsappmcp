@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Вход в архив WhatsApp</title>
+  <link rel="icon" href="/assets/flame-circle.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/archive.css">
+</head>
+<body>
+  <main class="oauth-shell">
+    <div class="sign-in-brand"><img src="/assets/flame-circle.svg" width="34" height="34" alt="">Уральская Сталь</div>
+    <header class="page-heading"><h1>Вход в архив WhatsApp</h1></header>
+    <form class="panel" method="post" action="/login">
+      {% if error %}<p class="notice error" role="alert">{{ error }}</p>{% endif %}
+      <label class="field">Логин
+        <input name="username" maxlength="32" autocomplete="username" autocapitalize="none" value="{{ username }}" required autofocus>
+      </label>
+      <label class="field">Пароль
+        <input name="password" type="password" maxlength="128" autocomplete="current-password" required>
+      </label>
+      <div class="actions">
+        <button type="submit">Войти</button>
+      </div>
+    </form>
+  </main>
+</body>
+</html>

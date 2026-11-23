@@ -1,0 +1,104 @@
+/* Dark theme is the default. Light theme: set data-theme="light" on <html>. */
+:root {
+  /* brand — fixed */
+  --brand-orange: #FF3C00;
+  --brand-orange-light: #F37130;
+  --brand-orange-deep: #F0512C;
+  --brand-orange-logo: #FF6B35;
+  --grad: linear-gradient(96deg, #FF3C00 0%, #F37130 52%, #F0512C 100%);
+
+  /* surfaces — warm graphite ladder */
+  --bg: #0A0A0B;
+  --bg-2: #0E0E0F;
+  --surf: #131314;
+  --surf-2: #181819;
+  --surf-3: #1F1F21;
+  --surf-4: #2A2A2D;
+
+  /* hairlines */
+  --line: rgba(255,255,255,.11);
+  --line-2: rgba(255,255,255,.21);
+
+  /* ink */
+  --fg: #F5F3F0;
+  --fg-2: #B2AFAA;
+  --fg-3: #918D85;
+
+  /* accent */
+  --acc: #FF4D1A;
+  --acc-2: #FF7A45;
+  --acc-ink: #FF7F4D;
+  --acc-soft: rgba(255,77,26,.12);
+  --acc-soft-2: rgba(255,77,26,.24);
+  --acc-ring: rgba(255,77,26,.34);
+
+  /* status */
+  --ok: #46C282;   --ok-soft: rgba(70,194,130,.13);
+  --warn: #EFA83A; --warn-soft: rgba(239,168,58,.13);
+  --err: #F4566A;  --err-soft: rgba(244,86,106,.13);
+  --info: #5CAAE0; --info-soft: rgba(92,170,224,.13);
+
+  /* severity S1–S4 */
+  --sev-critical: #F4566A;
+  --sev-major: #FF8A3D;
+  --sev-minor: #E5C05C;
+  --sev-info: #5CAAE0;
+
+  /* ink on solid fills */
+  --on-acc: #FFFFFF;
+  --on-ok: #06170F;
+  --on-warn: #1E1403;
+  --on-err: #22070A;
+
+  --grid: rgba(255,255,255,.05);
+  --scrim: rgba(8,6,5,.62);
+
+  /* semantic aliases */
+  --surface-page: var(--bg);
+  --surface-nav: var(--bg-2);
+  --surface-panel: var(--surf);
+  --surface-raised: var(--surf-2);
+  --surface-control: var(--surf-2);
+  --surface-hover: var(--surf-2);
+  --border-subtle: var(--line);
+  --border-strong: var(--line-2);
+  --text-primary: var(--fg);
+  --text-secondary: var(--fg-2);
+  --text-muted: var(--fg-3);
+  --text-link: var(--acc-ink);
+  --action-primary: var(--grad);
+  --focus-color: var(--acc);
+}
+
+[data-theme="light"] {
+  --bg: #EDECE7;
+  --bg-2: #F6F5F1;
+  --surf: #FFFFFF;
+  --surf-2: #F7F6F1;
+  --surf-3: #EDEBE4;
+  --surf-4: #DFDCD3;
+  --line: #DEDAD1;
+  --line-2: #C4BEB2;
+  --fg: #17171A;
+  --fg-2: #53504B;
+  --fg-3: #635F5A;
+  --acc: #EE3A00;
+  --acc-2: #F37130;
+  --acc-ink: #B02800;
+  --acc-soft: rgba(238,58,0,.08);
+  --acc-soft-2: rgba(238,58,0,.16);
+  --acc-ring: rgba(238,58,0,.26);
+  --ok: #0E7346;   --ok-soft: rgba(14,115,70,.10);
+  --warn: #7A5005; --warn-soft: rgba(239,168,58,.18);
+  --err: #CC2436;  --err-soft: rgba(204,36,54,.08);
+  --info: #2B7FB8; --info-soft: rgba(43,127,184,.09);
+  --sev-critical: #CC2436;
+  --sev-major: #A54C0D;
+  --sev-minor: #8E6A0C;
+  --sev-info: #2B7FB8;
+  --on-acc: #FFFFFF;
+  --on-ok: #FFFFFF;
+  --on-warn: #FFFFFF;
+  --on-err: #FFFFFF;
+  --grid: rgba(20,18,14,.06);
+}

@@ -1,0 +1,11 @@
+services:
+  waha:
+    environment:
+      WAHA_GOWS_DEVICE_HISTORY_SYNC_FULL_SYNC_DAYS_LIMIT: "${HISTORY_DAYS:-3650}"
+  exporter:
+    environment:
+      # The daily sync normally polls a recent window. A weekly rescan catches
+      # history delivered late by a linked device.
+      FULL_RESCAN_HOURS: "168"
+      RESCAN_HOURS: "48"
+      HISTORY_DAYS: "${HISTORY_DAYS:-3650}"

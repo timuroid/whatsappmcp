@@ -1,0 +1,535 @@
+{% macro icon(name) %}
+<svg aria-hidden="true" viewBox="0 0 24 24">
+  {% if name == 'home' %}<path d="M3 11 12 4l9 7m-2-1v10H5V10m5 10v-6h4v6"/>
+  {% elif name == 'upload' %}<path d="M12 16V4m-4 4 4-4 4 4M4 15v5h16v-5"/>
+  {% elif name == 'sync' %}<path d="M19 10a7 7 0 0 0-12-4L4 9m0-5v5h5m-4 5a7 7 0 0 0 12 4l3-3m-5 0h5v5"/>
+  {% elif name == 'box' %}<path d="M5 8v12h14V8M3 4h18v4H3zm6 8h6"/>
+  {% elif name == 'plug' %}<path d="M8 3v6m8-6v6M6 9h12v2a6 6 0 0 1-6 6v4M5 9h14"/>
+  {% elif name == 'plus' %}<path d="M12 5v14M5 12h14"/>
+  {% elif name == 'arrow' %}<path d="M4 12h16m-6-6 6 6-6 6"/>
+  {% elif name == 'back' %}<path d="M20 12H4m6 6-6-6 6-6"/>
+  {% elif name == 'download' %}<path d="M12 4v12m-4-4 4 4 4-4M5 20h14"/>
+  {% elif name == 'check' %}<path d="m5 12 4 4L19 6"/>
+  {% elif name == 'file' %}<path d="M6 3h8l4 4v14H6zm8 0v5h4m-9 5h6m-6 4h6"/>
+  {% elif name == 'search' %}<circle cx="10.5" cy="10.5" r="5.5"/><path d="m15 15 5 5"/>
+  {% elif name == 'copy' %}<rect x="8" y="8" width="12" height="12" rx="1"/><path d="M16 8V4H4v12h4"/>
+  {% elif name == 'message' %}<path d="M4 4h16v13H9l-5 4zm4 5h8m-8 4h5"/>
+  {% elif name == 'lock' %}<rect x="5" y="10" width="14" height="11" rx="1"/><path d="M8 10V7a4 4 0 0 1 8 0v3m-4 5v2"/>
+  {% elif name == 'users' %}<circle cx="9" cy="8" r="3"/><path d="M3 20v-2a4 4 0 0 1 4-4h4a4 4 0 0 1 4 4v2m1-15a3 3 0 0 1 0 6m2 3a4 4 0 0 1 3 4v2"/>
+  {% elif name == 'person' %}<circle cx="12" cy="8" r="3"/><path d="M5 20v-2a4 4 0 0 1 4-4h6a4 4 0 0 1 4 4v2"/>
+  {% elif name == 'chevron' %}<path d="m9 6 6 6-6 6"/>
+  {% elif name == 'caret' %}<path d="m6 9 6 6 6-6"/>
+  {% endif %}
+</svg>
+{% endmacro %}
+{% macro demo() %}
+<div class="demo" data-demo>
+  <div class="demo-choices" aria-label="Примеры запросов" role="group">
+    <button class="secondary" type="button" data-example="price" aria-pressed="true">Цена</button>
+    <button class="secondary" type="button" data-example="deadline" aria-pressed="false">Срок</button>
+    <button class="secondary" type="button" data-example="file" aria-pressed="false">Файл</button>
+  </div>
+  <p class="demo-question">{{ icon('search') }} <span data-question>Где согласовали стоимость доставки?</span></p>
+  <div class="demo-result" aria-live="polite">
+    <div class="demo-source">{{ icon('message') }} <span data-source>Снабжение · Мария · 12 марта</span></div>
+    <blockquote data-excerpt>Доставку подтвердили. Стоимость — 18 500 ₽.</blockquote>
+  </div>
+  <button class="quiet" type="button" data-copy-question>{{ icon('copy') }} Скопировать запрос</button>
+  <small class="demo-feedback" role="status"></small>
+</div>
+{% endmacro %}
+{% macro connection_controls() %}
+<section id="connection-panel" class="panel">
+  <div class="section-heading">
+    {% if admin %}<h2>WhatsApp</h2>{% endif %}<span id="connection-title" class="chip" role="status">Проверяем связь</span>
+  </div>
+  <div id="connect-actions" class="actions" hidden>
+    <button id="connect" type="button">Подключить WhatsApp</button>
+  </div>
+  <p id="account-mismatch" class="notice" hidden>Архив привязан к другому номеру. Подключите номер, с которого собрали историю.</p>
+  <div class="actions"><button class="{{ 'secondary' if admin else 'quiet' }}" id="reconnect-source" type="button" hidden>{{ 'Переподключить WhatsApp' if admin else 'Переподключить' }}</button></div>
+  <dialog id="reconnect-dialog" aria-labelledby="reconnect-heading">
+    <h2 id="reconnect-heading">Переподключить WhatsApp?</h2>
+    <p>Текущая сессия завершится. Чаты останутся в архиве. Привяжите тот же номер заново.</p>
+    <form method="dialog" class="actions">
+      <button type="submit" class="secondary" value="cancel" autofocus>Отмена</button>
+      <button type="submit" value="reconnect">Переподключить</button>
+    </form>
+  </dialog>
+  <div id="pairing" hidden>
+    <div class="segmented" role="group" aria-label="Способ подключения"{% if not admin %} hidden{% endif %}>
+      <button type="button" class="secondary" id="method-code" aria-pressed="true">По номеру</button>
+      <button type="button" class="secondary" id="method-qr" aria-pressed="false">QR-код</button>
+    </div>
+    <div id="pair-by-phone"{% if not admin %} hidden{% endif %}>
+      <form id="pair-phone">
+        <label class="field">Номер WhatsApp
+          <input id="phone-number" type="tel" inputmode="tel" autocomplete="tel" required maxlength="24" placeholder="+7 900 000-00-00">
+        </label>
+        <div class="actions"><button type="submit">Получить код</button></div>
+      </form>
+      <p id="pair-error" class="notice error" role="alert" hidden></p>
+      <div id="pair-result" class="pair-result" hidden>
+        <strong>Код подключения</strong>
+        <output id="pair-code" aria-live="polite"></output>
+        <ol class="path-list" aria-label="Действия в WhatsApp">
+          <li>Связанные устройства</li><li>Привязка устройства</li><li>Вход по номеру</li>
+        </ol>
+        <div class="actions"><button type="button" class="secondary" id="copy-pair-code">Скопировать код</button></div>
+        <p id="pair-feedback" class="hint" role="status"></p>
+      </div>
+    </div>
+  <figure id="pair-by-qr" class="pairing" hidden>
+    <div class="qr-frame"><img id="pairing-qr" alt="QR для основного подключения" width="176" height="176" hidden>
+      <span id="pairing-placeholder">Получаем QR…</span></div>
+    <figcaption>
+      <strong>Отсканируйте код с телефона</strong>
+      <ol class="path-list"><li>Связанные устройства</li><li>Привязка устройства</li></ol>
+      <button id="renew-qr" type="button" class="secondary">Обновить QR</button>
+    </figcaption>
+  </figure>
+  </div>
+</section>
+{% endmacro %}
+{% macro import_controls() %}
+<section{% if admin %} class="panel"{% endif %}>
+  <div class="section-heading">
+    {% if admin %}<h2>Добавить переписку</h2>{% endif %}
+    <button class="quiet" type="button" id="open-export-guide">Где взять файл?</button>
+  </div>
+  <form action="{% if admin %}/admin/import?owner={{ owner | urlencode }}{% else %}/import{% endif %}" method="post" enctype="multipart/form-data" id="import">
+    <label class="dropzone" id="dropzone">
+      {{ icon('upload') }}
+      <strong id="file-label">Выберите файл WhatsApp</strong>
+      <small id="file-info">TXT или ZIP до 512 МБ</small>
+      <input id="file" name="file" type="file" accept=".txt,.zip" aria-labelledby="file-label" aria-describedby="file-info import-file-error" required>
+    </label>
+    <p class="notice error" id="import-file-error" role="alert" hidden></p>
+    <div id="import-fields" hidden>
+    <input type="hidden" name="mode" id="import-mode" value="new">
+    <div class="segmented" role="group" aria-label="Куда импортировать">
+      <button class="secondary" type="button" id="mode-new" aria-pressed="true">Новый чат</button>
+      <button class="secondary" type="button" id="mode-existing" aria-pressed="false"{% if not chats %} hidden{% endif %}>В существующий</button>
+    </div>
+    <label class="field" id="target-field" hidden>Чат в архиве
+      <select id="target" name="target">
+        <option value="">Выберите чат</option>
+        {% for item in chats %}<option value="{{ item.chat_id }}"{% if form.get('target') == item.chat_id %} selected{% endif %}>{{ item.name }}</option>{% endfor %}
+      </select>
+    </label>
+    <label class="field" id="name-field">Название нового чата
+      <input id="name" name="name" maxlength="120" value="{{ form.get('name', '') }}" placeholder="Например, Снабжение">
+    </label>
+    <details{% if form.get('owner') or form.get('order') == 'mdy' or form.get('timezone', 'Europe/Moscow') != 'Europe/Moscow' %} open{% endif %}>
+      <summary>Настройки импорта</summary>
+      <label class="field">Моё имя в файле
+        <input name="owner" maxlength="128" value="{{ form.get('owner', '') }}" autocomplete="off">
+        <small>Укажите имя из переписки, чтобы ваши сообщения отображались справа.</small>
+      </label>
+      <label class="field">Дата в файле
+        <select id="order" name="order">
+          <option value="dmy">День / месяц / год</option>
+          <option value="mdy"{% if form.get('order') == 'mdy' %} selected{% endif %}>Месяц / день / год</option>
+        </select>
+      </label>
+      <label class="field">Часовой пояс выгрузки
+        <input id="timezone" name="timezone" maxlength="64" value="{{ form.get('timezone', 'Europe/Moscow') }}" required>
+      </label>
+    </details>
+    <div class="actions"><button type="submit">Импортировать чат</button></div>
+    <p id="import-progress" role="status" hidden>Импортируем переписку…</p>
+    </div>
+  </form>
+  <dialog id="export-guide" aria-labelledby="export-guide-title">
+    <div class="section-heading"><h2 id="export-guide-title">Экспорт на телефоне</h2>
+      <form method="dialog"><button class="quiet icon-button" type="submit" aria-label="Закрыть инструкцию">×</button></form></div>
+    <div class="segmented" aria-label="Модель телефона" role="group">
+      <button class="secondary" type="button" data-guide-os="ios" aria-pressed="true">iPhone</button>
+      <button class="secondary" type="button" data-guide-os="android" aria-pressed="false">Android</button>
+    </div>
+    <ol class="guide-steps">
+      <li id="guide-open-chat">Чат → имя вверху</li>
+      <li>«Экспорт чата»</li>
+      <li>«С медиа» → сохранить файл</li>
+    </ol>
+    <form method="dialog" class="actions"><button value="choose">{{ icon('upload') }} Выбрать файл</button></form>
+  </dialog>
+</section>
+{% endmacro %}
+{% macro plugin_settings() %}
+<div class="form-column">
+  <nav class="plugin-steps" aria-label="Шаги настройки плагина">
+    <button class="quiet" type="button" data-plugin-step="password" aria-current="step"><b>1</b> Пароль</button>
+    <button class="quiet" type="button" data-plugin-step="connect"><b>2</b> Подключение</button>
+    <button class="quiet" type="button" data-plugin-step="try"><b>3</b> Первый запрос</button>
+  </nav>
+  <p id="plugin-feedback" class="plugin-feedback" role="status" hidden></p>
+    <section class="panel" data-plugin-panel="password">
+      <div class="section-heading"><h2>{{ icon('lock') }} Доступ к архиву</h2></div>
+      <div class="actions" id="plugin-password-actions" hidden>
+        <button type="button" id="continue-plugin">К подключению {{ icon('arrow') }}</button>
+        <button type="button" class="secondary" id="edit-plugin-password">Сменить пароль</button>
+        <button class="quiet" id="plugin-revoke" type="button" hidden>Отозвать доступ</button>
+      </div>
+      <form id="plugin-password-form" hidden>
+        <label class="field">Пароль
+          <input id="plugin-password" type="password" autocomplete="new-password" minlength="12" maxlength="128" required>
+          <small id="password-hint">От 12 символов. Понадобится при входе из ChatGPT.</small>
+        </label>
+        <label class="field">Повторите пароль
+          <input id="plugin-password-repeat" type="password" autocomplete="new-password" minlength="12" maxlength="128" required>
+        </label>
+        <div class="actions">
+          <button type="submit">Сохранить и продолжить {{ icon('arrow') }}</button>
+          <button class="quiet" type="button" id="cancel-plugin-password" hidden>Отмена</button>
+        </div>
+      </form>
+      <dialog id="revoke-dialog">
+        <h2>Отозвать доступ ChatGPT?</h2>
+        <p>Чтобы снова запустить поиск, потребуется подключиться с паролем.</p>
+        <form method="dialog" class="actions">
+          <button value="cancel" class="secondary">Отмена</button>
+          <button value="revoke">Отозвать доступ</button>
+        </form>
+      </dialog>
+    </section>
+    <section class="panel" data-plugin-panel="connect" hidden>
+      <div class="section-heading">
+        <h2 tabindex="-1" id="plugin-connect-heading">{{ icon('plug') }} Добавить в ChatGPT</h2>
+        <span class="chip" id="plugin-runtime">Проверяем сервер</span>
+      </div>
+      <label class="field">Адрес сервера
+        <span class="input-action"><input id="plugin-endpoint" type="url" readonly>
+          <button class="secondary icon-button" id="copy-endpoint" type="button" aria-label="Скопировать адрес" title="Скопировать адрес" disabled>{{ icon('copy') }}</button></span>
+      </label>
+      <p id="plugin-transport" class="hint"></p>
+      <p class="hint" id="plugin-account-hint" hidden>{% if admin_session %}Для входа из ChatGPT используйте логин admin и пароль, заданный для плагина.{% else %}При входе из ChatGPT используйте логин и пароль от архива.{% endif %}</p>
+      <ol class="path-list" id="plugin-path" hidden><li>Плагины</li><li>Добавить MCP</li><li>OAuth</li></ol>
+      <div class="actions">
+        <a class="button" href="https://chatgpt.com/" target="_blank" rel="noopener noreferrer" id="open-chatgpt" hidden>Открыть ChatGPT {{ icon('arrow') }}</a>
+        <button class="secondary" id="check-plugin" type="button">Проверить подключение</button>
+      </div>
+      <p id="endpoint-feedback" class="hint" role="status"></p>
+      <details id="plugin-help">
+        <summary>Как настроить доступ</summary>
+        <a href="https://developers.openai.com/plugins/deploy/connect-chatgpt">Подключение к ChatGPT</a>
+        <a href="https://developers.openai.com/api/docs/guides/secure-mcp-tunnels">Настройка туннеля</a>
+      </details>
+    </section>
+    <section class="panel demo-panel" data-plugin-panel="try" hidden>
+      <div class="section-heading"><h2 tabindex="-1" id="plugin-try-heading">Что спросить в ChatGPT</h2><span class="sample-tag">Демо</span></div>
+      {{ demo() }}
+    </section>
+</div>
+{% endmacro %}
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Архив WhatsApp</title>
+  <link rel="icon" href="/assets/flame-circle.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/assets/archive.css">
+  <script defer src="/assets/archive.js"></script>
+</head>
+<body data-view="{{ view }}" data-role="{{ 'admin' if admin else 'user' }}"
+      data-admin-session="{{ 'true' if admin_session else 'false' }}"{% if admin %} data-archive-owner="{{ owner }}"{% endif %}>
+  <a class="skip" href="#content">К содержанию</a>
+  {% if admin %}
+  <div class="shell">
+    <aside class="rail" id="navigation" aria-label="Навигация по архиву">
+      <div class="brand">
+        <a href="#home"><img class="brand-logo" src="/assets/flame-circle.svg" width="34" height="34" alt="">
+          <span><small>{{ 'Администрирование' if admin else 'Архив WhatsApp' }}</small>Уральская Сталь</span></a>
+        <button class="icon-button drawer-close" id="close-nav" aria-label="Закрыть меню" type="button">×</button>
+      </div>
+      <nav aria-label="Разделы">
+        <a data-view-link="home" href="#home">{{ icon('home') }}Обзор</a>
+        <a data-view-link="manual" href="#manual">{{ icon('upload') }}Добавить чат</a>
+        {% if admin %}<a data-view-link="sync" href="#sync">{{ icon('sync') }}Источники WhatsApp</a>{% endif %}
+        <a data-view-link="archive" href="#archive">{{ icon('box') }}{{ 'Архив и экспорт' if admin else 'Архив' }}</a>
+        <a data-view-link="plugin" href="#plugin">{{ icon('plug') }}Плагин ChatGPT</a>
+        {% if admin %}<a data-view-link="users" href="#users">{{ icon('users') }}Пользователи</a>{% endif %}
+      </nav>
+      <div class="rail-status">
+        <span id="connection-chip" class="chip">Проверяем WhatsApp</span>
+        <a href="/" class="admin-entry">{{ icon('message') }} Мои чаты</a>
+        <form action="/logout" method="post"><button class="quiet" type="submit">Выйти</button></form>
+      </div>
+    </aside>
+    <button class="drawer-overlay" id="nav-overlay" aria-hidden="true" tabindex="-1" type="button" hidden></button>
+    <div class="frame">
+    <header class="topbar">
+      <button id="open-nav" class="icon-button drawer-open" type="button" aria-label="Открыть меню" aria-controls="navigation" aria-expanded="false">
+        <svg aria-hidden="true" viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h16"/></svg>
+      </button>
+      <div class="breadcrumbs"><span>Архив WhatsApp</span><span aria-hidden="true">/</span><strong id="current-view">Обзор</strong></div>
+      <button id="theme-toggle" class="icon-button" type="button" aria-label="Включить светлую тему">
+        <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M19 5l-1.5 1.5m-11 11L5 19"/></svg>
+      </button>
+    </header>
+    <main id="content" tabindex="-1">
+      <form class="archive-owner" id="archive-owner-form" action="/admin" method="get">
+        <label class="field">Архив
+          <select name="owner" id="archive-owner">
+            <option value="admin"{% if owner == 'admin' %} selected{% endif %}>Мой архив</option>
+            {% for user in archive_users %}
+            <option value="{{ user.username }}"{% if owner == user.username %} selected{% endif %}>{{ user.name }} · {{ user.username }}</option>
+            {% endfor %}
+          </select>
+        </label>
+        <button class="secondary" type="submit">Открыть</button>
+      </form>
+      <section data-view-panel="home" id="home"{% if view != 'home' %} hidden{% endif %}>
+        <header class="page-heading heading-action">
+          <div><h1>Архив WhatsApp</h1><p>Переписка для поиска в ChatGPT</p></div>
+          <a class="button" href="#manual" id="home-import">{{ icon('plus') }} Добавить чат</a>
+        </header>
+        <a href="#archive" class="metrics">
+          <span class="sr-only">Открыть архив</span>
+          <div><strong data-stat="chats">{{ chats | length }}</strong><span>Чаты</span></div>
+          <div><strong data-stat="messages">{{ chats | sum(attribute='count') }}</strong><span>Сообщения</span></div>
+          <div><strong data-stat="attachments">{{ chats | sum(attribute='attachments') }}</strong><span>Вложения</span></div>
+          {{ icon('arrow') }}
+        </a>
+        <div class="overview-grid">
+          <section class="panel setup-panel">
+            <h2>Настройка</h2>
+            <a class="setup-row" id="setup-import" href="#manual">
+              <span class="setup-icon">{{ icon('upload') }}</span>
+              <span><strong>Чаты</strong><small id="setup-import-status">Загрузить экспорт</small></span>
+              <span class="setup-arrow">{{ icon('arrow') }}</span><span class="setup-complete">{{ icon('check') }}</span>
+            </a>
+            <a class="setup-row" id="setup-sync" href="#sync">
+              <span class="setup-icon">{{ icon('sync') }}</span>
+              <span><strong>Автообновление</strong><small id="setup-sync-status">Проверяем связь…</small></span>
+              {% if admin %}<span class="setup-arrow">{{ icon('arrow') }}</span>{% endif %}<span class="setup-complete">{{ icon('check') }}</span>
+            </a>
+            <a class="setup-row" id="setup-plugin" href="#plugin">
+              <span class="setup-icon">{{ icon('plug') }}</span>
+              <span><strong>Плагин ChatGPT</strong><small id="setup-plugin-status">Проверяем доступ…</small></span>
+              <span class="setup-arrow">{{ icon('arrow') }}</span><span class="setup-complete">{{ icon('check') }}</span>
+            </a>
+          </section>
+          <section class="panel demo-panel">
+            <div class="section-heading"><h2>Что можно найти</h2><span class="sample-tag">Демо</span></div>
+            {{ demo() }}
+          </section>
+        </div>
+      </section>
+
+      {% if admin %}
+      <section data-view-panel="sync" id="sync"{% if view != 'sync' %} hidden{% endif %}>
+        <header class="page-heading">
+          <h1>Источники WhatsApp</h1>
+        </header>
+        <div id="live-error" class="notice error" role="alert" hidden></div>
+        <div class="flow form-column">
+          {{ connection_controls() }}
+
+            <section class="panel" id="group-panel" hidden>
+              <div class="section-heading"><h2>Общие группы</h2>
+                <button type="button" class="secondary" id="refresh-groups">Обновить список</button>
+              </div>
+              <label class="field">Группа WhatsApp<select id="group-source"></select></label>
+              <p id="group-hint" class="hint">Добавьте подключённый аккаунт в группу. Затем обновите список.</p>
+              <div class="actions"><button type="button" id="group-sync" disabled>Добавить группу в архив</button></div>
+            </section>
+
+            <section class="panel" id="match-review" hidden>
+              <h2>Проверить привязки</h2>
+              <div id="match-rows"></div>
+            </section>
+
+            <section class="panel empty-action" id="sync-empty" hidden>
+              {{ icon('box') }}
+              <div><h2>Добавьте первый чат</h2><p>Из экспорта WhatsApp</p></div>
+              <a class="button" href="#manual">{{ icon('plus') }} Добавить чат</a>
+            </section>
+
+            <section id="chat-picker" class="panel" hidden>
+              <div class="section-heading"><h2 id="mapping-heading">Привязка чата</h2>
+                <button type="button" class="quiet" id="cancel-mapping" hidden>Отмена</button></div>
+              <label class="field">В архив
+                <select id="link-target"></select>
+              </label>
+              <p id="link-boundary" class="hint"></p>
+              <div class="catalog-tools">
+                <label class="field">Из WhatsApp
+                  <input id="chat-filter" type="search" placeholder="Найти чат" autocomplete="off">
+                </label>
+                <button id="refresh-chats" class="secondary" type="button">Обновить список</button>
+              </div>
+              <div class="catalog-meta">
+                <p id="chat-count"></p>
+              </div>
+              <div id="live-chats" class="chat-list" aria-label="Чаты WhatsApp"></div>
+              <p id="selection-hint" class="hint"></p>
+              <p id="replace-hint" class="hint" hidden>Сообщения прежней привязки скроются из поиска. Импортированный файл останется в архиве.</p>
+              <div class="actions">
+                <button id="link-chat" type="button" aria-describedby="selection-hint" disabled>Включить автообновление</button>
+              </div>
+            </section>
+
+            <section id="updates-panel" class="panel" hidden>
+              <div class="section-heading">
+                <h2>Чаты на автообновлении</h2>
+                <button id="update-now" type="button" class="secondary">Проверить сейчас</button>
+              </div>
+              <div id="live-job" class="job" hidden>
+                <progress id="job-progress" aria-label="Прогресс обновления"></progress>
+                <p id="job-detail" class="hint" role="status"></p>
+              </div>
+              <div id="update-rows"></div>
+            </section>
+        </div>
+      </section>
+      <section data-view-panel="users" id="users" hidden>
+        <header class="page-heading heading-action"><h1>Пользователи</h1>
+          <button id="create-user" type="button">{{ icon('plus') }} Создать пользователя</button>
+        </header>
+        <div class="panel">
+          <h2>Доступ к архиву и ChatGPT</h2>
+          <p id="users-feedback" class="hint" role="status"></p>
+          <div id="users-list"></div>
+        </div>
+        <dialog id="user-dialog" aria-labelledby="user-dialog-title">
+          <h2 id="user-dialog-title">Создать пользователя</h2>
+          <form id="user-form">
+            <label class="field" id="user-name-field">Имя
+              <input id="user-name" maxlength="100" required>
+            </label>
+            <div class="field" id="user-login-field">
+              <label for="user-login">Логин</label>
+              <input id="user-login" maxlength="32" pattern="[a-zA-Z0-9][a-zA-Z0-9._\-]{2,31}" autocapitalize="none" autocomplete="off" aria-describedby="user-login-hint" required>
+              <small id="user-login-hint">От 3 до 32 символов. Латиница, цифры, точка, дефис, подчёркивание.</small>
+            </div>
+            <div class="field">
+              <label for="user-password">Пароль</label>
+              <input id="user-password" type="password" minlength="12" maxlength="128" autocomplete="new-password" aria-describedby="user-password-hint" required>
+              <small id="user-password-hint">От 12 символов. Подходит для входа в архив и при подключении ChatGPT.</small>
+            </div>
+            <p id="user-reset-hint" class="hint" hidden>Смена пароля завершит вход в архив и подключение ChatGPT для этого пользователя.</p>
+            <p id="user-form-error" class="notice error" role="alert" hidden></p>
+            <div class="actions">
+              <button id="save-user" type="submit">Создать</button>
+              <button id="cancel-user" type="button" class="secondary">Отмена</button>
+            </div>
+          </form>
+        </dialog>
+        <dialog id="disable-user-dialog" aria-labelledby="disable-user-title">
+          <h2 id="disable-user-title">Отключить доступ?</h2>
+          <p id="disable-user-text"></p>
+          <form method="dialog" class="actions">
+            <button class="secondary" value="cancel" autofocus>Отмена</button>
+            <button value="disable">Отключить</button>
+          </form>
+        </dialog>
+      </section>
+      <section data-view-panel="history" id="history" hidden>
+        <header class="page-heading">
+          <a class="back-link" href="#archive">← К чатам</a>
+          <h1 id="history-title">История чата</h1>
+        </header>
+        <div class="panel form-column">
+          <label class="field">Чат
+            <select id="history-chat"><option value="">Выберите чат</option></select>
+          </label>
+          <form id="history-search" class="history-search">
+            <div class="field">
+              <label for="history-query">Поиск по словам</label>
+              <span class="input-action"><input id="history-query" type="search" maxlength="160" placeholder="Слово или фраза">
+                <button type="submit" class="secondary">Найти</button></span>
+            </div>
+          </form>
+          <p class="hint" id="history-status" role="status">Выберите чат.</p>
+          <div id="history-feed"></div>
+          <div class="actions"><button class="secondary" id="history-more" type="button" hidden>Загрузить более ранние</button></div>
+        </div>
+      </section>
+      {% endif %}
+
+      <section data-view-panel="manual" id="manual"{% if view != 'manual' %} hidden{% endif %}>
+        <header class="page-heading"><h1>Добавить чат</h1></header>
+        <div class="flow form-column">
+        {% if error and view == 'manual' %}
+          <div class="notice error" role="alert"><strong>Файл не импортирован</strong><p>{{ error }}</p></div>
+        {% elif result %}
+          <section class="panel import-success" aria-labelledby="import-success-title">
+            <div class="section-heading"><h2 id="import-success-title">{{ icon('check') }} {{ result.chat }}</h2>
+              <span class="chip" id="import-sync-status" data-chat-id="{{ result.chat_id }}" data-state="{{ 'online' if result.sync_status == 'linked' else 'warning' }}">{{ 'Автообновление включено' if result.sync_status == 'linked' else 'Подбираем чат WhatsApp' if result.sync_status == 'waiting' else 'Администратор проверит' }}</span>
+            </div>
+            <p>{{ result.first[:10] }} — {{ result.last[:10] }}</p>
+            <ul class="import-stats" aria-label="Результат импорта">
+              <li>Новых сообщений: {{ result.new }}</li>
+              {% if result.updated %}<li>Обновлено: <strong>{{ result.updated }}</strong></li>{% endif %}
+              {% if result.unchanged %}<li>Уже в архиве: <strong>{{ result.unchanged }}</strong></li>{% endif %}
+              {% if result.files %}<li>Вложений: <strong>{{ result.files }}</strong></li>{% endif %}
+              {% if result.unmatched %}<li>Без связи с сообщением: <strong>{{ result.unmatched }}</strong></li>{% endif %}
+            </ul>
+            <div class="actions"><a class="button" href="#plugin">Добавить плагин</a>
+              <button type="button" class="secondary" id="import-another">Добавить ещё</button>
+            </div>
+          </section>
+        {% endif %}
+          {{ import_controls() }}
+        </div>
+      </section>
+
+      <section data-view-panel="archive" id="archive"{% if view != 'archive' %} hidden{% endif %}>
+        <header class="page-heading heading-action"><h1>{{ 'Архив и экспорт' if admin else 'Архив' }}</h1>
+          <a class="button" href="#manual">{{ icon('plus') }} Добавить чат</a>
+        </header>
+        {% if error and view == 'archive' %}
+          <div class="notice error" role="alert"><strong>Выгрузка не сформирована</strong><p>{{ error }}</p></div>
+        {% endif %}
+        <div class="{{ 'workspace' if admin else 'form-column' }}">
+          <section class="panel">
+            <h2>Чаты в архиве</h2>
+            <p id="archive-empty"{% if chats %} hidden{% endif %}>Архив пока пуст. <a href="#manual">Импортируйте файл</a> с телефона.</p>
+            <div id="archive-rows" class="archive-rows">
+              {% for chat in chats %}
+              <article class="archive-row"><h3>{{ chat.name }}</h3>
+                <p>{{ chat.first[:10] }} — {{ chat.last[:10] }}</p>
+                <small>Сообщений — {{ chat.count }}, вложений — {{ chat.attachments }}{% if chat.unavailable %}, недоступных — {{ chat.unavailable }}{% endif %}.</small>
+                {% if chat.imported_through %}<small>Импорт с телефона по {{ chat.imported_through[:10] }}.</small>{% endif %}
+              </article>
+              {% endfor %}
+            </div>
+          </section>
+          {% if admin %}<div class="flow">
+            <section class="panel">
+              <h2>Выгрузить историю</h2>
+              <form action="/export" method="get">
+                <input type="hidden" name="owner" value="{{ owner }}">
+                <label class="field">Чат
+                  <select id="export-chat" name="chat">
+                    <option value="">Все чаты</option>
+                    {% for item in chats %}<option value="{{ item.chat_id }}">{{ item.name }}</option>{% endfor %}
+                  </select>
+                </label>
+                <label class="field">Год
+                  <input id="year" name="year" inputmode="numeric" pattern="20[0-9]{2}" maxlength="4" placeholder="Пусто — весь архив">
+                  <small>Год считается по UTC. Файл JSONL содержит сообщения и сведения о вложениях.</small>
+                </label>
+                <button id="export-button" type="submit"{% if not chats %} disabled{% endif %}>Скачать JSONL</button>
+              </form>
+            </section>
+          </div>{% endif %}
+        </div>
+      </section>
+
+      <section data-view-panel="plugin" id="plugin" hidden>
+        <header class="page-heading heading-action"><h1>Плагин ChatGPT</h1>
+          <span class="chip" id="plugin-password-state">Проверяем доступ</span>
+        </header>
+        {{ plugin_settings() }}
+      </section>
+    </main>
+    </div>
+  </div>
+  {% else %}
+  {% include "member-page.html.jinja" %}
+  {% endif %}
+</body>
+</html>

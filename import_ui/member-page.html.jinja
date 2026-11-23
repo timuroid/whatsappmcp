@@ -1,0 +1,102 @@
+{% macro chat_row(chat=None) %}
+  <article class="member-archive-row">
+    <a class="member-chat" href="#chat={{ chat.chat_id | urlencode if chat else '' }}" data-chat-id="{{ chat.chat_id if chat else '' }}">
+      <span class="member-chat-icon">{{ icon('message') }}</span>
+      <span class="member-chat-copy">
+        <strong data-chat-name>{{ chat.name if chat else '' }}</strong>
+        <small data-chat-meta>{% if chat %}Сообщений — {{ chat.count }} · С {{ chat.first_year }} года{% endif %}</small>
+        <small data-chat-sync hidden></small>
+      </span>
+      {{ icon('chevron') }}
+    </a>
+    <button class="quiet member-resolve" type="button" hidden>Выбрать чат WhatsApp</button>
+  </article>
+{% endmacro %}
+<header class="topbar member-topbar">
+  <div class="member-topbar-content">
+    <a class="member-brand" href="#chats"><img src="/assets/flame-circle.svg" width="30" height="30" alt="">Уральская Сталь</a>
+    <button class="secondary member-profile" id="open-profile" type="button" aria-haspopup="dialog" aria-controls="profile-dialog" aria-label="Профиль{% if member %} {{ member }}{% elif admin_session %} администратора{% endif %}">
+      {{ icon('person') }} <span>{{ member or ('Администратор' if admin_session else 'Профиль') }}</span>{{ icon('caret') }}
+    </button>
+  </div>
+</header>
+<main class="member-main" id="content" tabindex="-1">
+  <section id="chats" aria-labelledby="chats-title">
+    <header class="page-heading heading-action">
+      <h1 id="chats-title" tabindex="-1">Чаты WhatsApp</h1>
+      <button id="add-chat" type="button" aria-controls="member-upload" aria-expanded="false" hidden>{{ icon('plus') }} Добавить архив</button>
+    </header>
+    <div id="member-notice" class="notice success" role="status"{% if not result %} hidden{% endif %}>{% if result %}Чат добавлен.{% endif %}</div>
+    <section class="member-source" id="member-source" aria-labelledby="member-source-title">
+      <h2 class="sr-only" id="member-source-title" tabindex="-1">Подключение WhatsApp</h2>
+      <div id="live-error" class="notice error" role="alert" hidden></div>
+      {{ connection_controls() }}
+    </section>
+    <section class="panel member-upload" id="member-upload" aria-labelledby="member-upload-title"{% if not error %} hidden{% endif %}>
+      <h2 id="member-upload-title" tabindex="-1">Добавить архив WhatsApp</h2>
+      <p class="notice error" id="import-response-error" role="alert"{% if not error %} hidden{% endif %}>{{ error or '' }}</p>
+      {{ import_controls() }}
+    </section>
+    <section class="panel member-match" id="member-match" aria-labelledby="member-match-title" hidden>
+      <div class="section-heading">
+        <h2 id="member-match-title" tabindex="-1">Выберите чат WhatsApp</h2>
+        <button class="quiet icon-button" id="member-match-close" type="button" aria-label="Закрыть выбор чата">×</button>
+      </div>
+      <p class="hint" id="member-match-reason"></p>
+      <label class="field">
+        <span class="sr-only">Поиск по названию чата</span>
+        <input type="search" id="member-match-filter" placeholder="Найти чат" autocomplete="off">
+      </label>
+      <div class="chat-list" id="member-match-chats" role="group" aria-labelledby="member-match-title"></div>
+      <p class="notice error" id="member-match-error" role="alert" hidden></p>
+      <div class="actions">
+        <button id="member-match-submit" type="button" disabled>Привязать чат</button>
+        <button class="quiet" id="member-match-refresh" type="button">Обновить список</button>
+      </div>
+    </section>
+    <div class="member-chat-list" id="archive-rows"{% if not chats %} hidden{% endif %}>
+      {% for chat in chats %}{{ chat_row(chat) }}{% endfor %}
+    </div>
+    <template id="member-chat-row">{{ chat_row() }}</template>
+  </section>
+  <section class="conversation" id="conversation" aria-labelledby="history-title" hidden>
+    <header class="conversation-header">
+      <div class="conversation-heading">
+        <a class="conversation-back" href="#chats" aria-label="К чатам" title="К чатам">{{ icon('back') }}</a>
+        <div>
+          <h1 id="history-title" tabindex="-1">История чата</h1>
+          <p id="conversation-meta"></p>
+        </div>
+      </div>
+    </header>
+    <div class="conversation-panel">
+      <p class="conversation-status" id="history-status" role="status" hidden></p>
+      <div class="conversation-viewport" id="conversation-viewport" tabindex="0" role="region" aria-label="Лента сообщений">
+        <div class="conversation-timeline">
+          <div class="conversation-feed" id="history-feed"></div>
+        </div>
+      </div>
+    </div>
+    <template id="conversation-download-icon">{{ icon('download') }}</template>
+  </section>
+</main>
+<dialog class="member-dialog" id="profile-dialog" aria-labelledby="profile-title">
+  <header class="section-heading member-dialog-heading">
+    <h2 id="profile-title">Плагин ChatGPT</h2>
+    <form method="dialog"><button class="quiet icon-button" type="submit" aria-label="Закрыть профиль">×</button></form>
+  </header>
+  <p class="chip" id="plugin-password-state">Проверяем доступ</p>
+  {{ plugin_settings() }}
+  <footer class="member-profile-actions">
+    <button class="quiet" id="open-source" type="button" aria-controls="member-source">{{ icon('sync') }} Мой WhatsApp</button>
+    {% if admin_session %}<a class="admin-entry" href="/admin">{{ icon('lock') }} Администрирование</a>{% endif %}
+    {% if member or admin_session %}
+    <form action="/logout" method="post"><button class="quiet" type="submit">Выйти</button></form>
+    {% else %}
+    <a class="admin-entry" href="/login">Войти</a>
+    {% endif %}
+    <button class="quiet icon-button" id="theme-toggle" type="button" aria-label="Включить светлую тему">
+      <svg aria-hidden="true" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2M5 5l1.5 1.5m11 11L19 19M19 5l-1.5 1.5m-11 11L5 19"/></svg>
+    </button>
+  </footer>
+</dialog>

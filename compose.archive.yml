@@ -1,0 +1,21 @@
+services:
+  waha:
+    image: devlikeapro/waha:gows-2026.10.1
+    platform: linux/amd64
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${WA_HISTORY_WAHA_PORT-3031}:3000"
+    environment:
+      WAHA_API_KEY: ${WA_HISTORY_WAHA_KEY:?launch from the archive panel}
+      WHATSAPP_DEFAULT_ENGINE: GOWS
+      WHATSAPP_API_HOSTNAME: 0.0.0.0
+      WAHA_BASE_URL: http://127.0.0.1:3031
+      WAHA_DASHBOARD_ENABLED: "false"
+      WHATSAPP_SWAGGER_ENABLED: "false"
+      WAHA_PRINT_QR: "false"
+      WHATSAPP_RESTART_ALL_SESSIONS: "true"
+      WAHA_GOWS_DEVICE_REQUIRE_FULL_SYNC: "true"
+      # Ask WhatsApp for its available history without a day cap.
+      WAHA_GOWS_DEVICE_HISTORY_SYNC_FULL_SYNC_DAYS_LIMIT: "null"
+    volumes:
+      - "${WA_HISTORY_WAHA_SESSIONS:?launch from the archive panel}:/app/.sessions"
