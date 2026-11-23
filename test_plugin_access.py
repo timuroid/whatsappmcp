@@ -3,6 +3,7 @@ import hashlib
 import io
 import tempfile
 import unittest
+import zipfile
 from pathlib import Path
 from unittest.mock import patch
 from urllib.parse import parse_qs, urlsplit
@@ -68,7 +69,15 @@ class PluginAccessTest(unittest.TestCase):
             "protocolVersion": "2025-11-25", "capabilities": {}, "clientInfo": {"name": "Test", "version": "1"}}}
         with tempfile.TemporaryDirectory() as temporary:
             state = Path(temporary)
-            row = import_file(state, io.BytesIO(b"15.05.20, 09:30 - Test: Archive entry"), "chat.txt", name="Test chat")
+            png = base64.b64decode(
+                "iVBORw0KGgoAAAANSUhEUgAAAAIAAAACCAIAAAD91JpzAAAAEElEQVR4nGP4z8AARAwQCgAf7gP9i18U1AAAAABJRU5ErkJggg=="
+            )
+            with io.BytesIO() as bundle:
+                with zipfile.ZipFile(bundle, "w") as export:
+                    export.writestr("_chat.txt", "15.05.20, 09:30 - Test: Archive entry <attached: fixture.png>")
+                    export.writestr("fixture.png", png)
+                bundle.seek(0)
+                row = import_file(state, bundle, "chat.zip", name="Test chat")
             user_state = account_state(state, "test.user")
             import_file(user_state, io.BytesIO(b"15.05.20, 09:30 - Test: Member entry"), "chat.txt", name="Member chat")
             with (
@@ -128,6 +137,21 @@ class PluginAccessTest(unittest.TestCase):
                 search = client.post("/mcp", headers=headers, json={"jsonrpc": "2.0", "id": 2, "method": "tools/call",
                     "params": {"name": "search_messages", "arguments": {"query": "Archive entry"}}})
                 self.assertIn("Archive entry", search.text)
+                self.assertNotIn(base64.b64encode(png).decode("ascii"), search.text)
+                found = search.json()["result"]["structuredContent"]["matches"][0]
+                image_args = {field: found[field] for field in ("chat", "timestamp", "author")}
+                image_args["filename"] = found["attachments"][0]["filename"]
+                image_call = {"jsonrpc": "2.0", "id": 5, "method": "tools/call",
+                              "params": {"name": "get_image", "arguments": image_args}}
+                image_result = client.post("/mcp", json=image_call, headers=headers).json()["result"]
+                self.assertFalse(image_result.get("isError"))
+                image = image_result["content"][1]
+                self.assertEqual((image["type"], image["mimeType"]), ("image", "image/png"))
+                self.assertEqual(base64.b64decode(image["data"]), png)
+                with patch.object(mcp_server, "MAX_IMAGE_BYTES", 5):
+                    oversized = client.post("/mcp", json=image_call, headers=headers).json()["result"]
+                self.assertTrue(oversized["isError"])
+                self.assertNotIn(base64.b64encode(png).decode("ascii"), str(oversized))
                 self.assertEqual(client.post("/token", data=token_request).status_code, 400)
                 self.assertEqual(admin.post("/api/plugin/revoke", json={}).status_code, 403)
                 revoked = admin.post("/api/plugin/revoke", json={}, headers=origin)
@@ -201,6 +225,9 @@ class PluginAccessTest(unittest.TestCase):
                     message = result.json()["result"]["structuredContent"]["message"]
                     self.assertEqual(message["text"], "Member entry")
                     self.assertNotIn("id", message)
+                    denied = client.post("/mcp", json=image_call, headers=bearer).json()["result"]
+                    self.assertTrue(denied["isError"])
+                    self.assertNotIn(base64.b64encode(png).decode("ascii"), str(denied))
                     refreshed = admin.post(users_path, headers=origin, json={"action": "password",
                         "username": "test.user", "password": "A new test password"})
                     self.assertEqual(refreshed.status_code, 200)

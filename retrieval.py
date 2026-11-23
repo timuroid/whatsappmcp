@@ -202,31 +202,45 @@ def lookup(db, query, *, chat=None, after=None, before=None, limit=8, embedder=N
     }
 
 
+class AmbiguousMessage(ValueError):
+    pass
+
+
+def message_at(db, *, chat, timestamp, author=None, filename=None):
+    if not chat or not timestamp:
+        raise ValueError("Provide the exact chat and timestamp from a search result")
+    candidates = db.execute("""
+        SELECT * FROM messages
+        WHERE timestamp=? AND active=1 AND deleted=0
+            AND COALESCE(NULLIF(json_extract(record, '$.chat'), ''), 'Чат без названия')=?
+    """, (utc(timestamp), chat))
+    match = None
+    for candidate in candidates:
+        record = json.loads(candidate["record"])
+        if author is not None and message_location(record)["author"] != author:
+            continue
+        if filename is not None and not any(item.get("filename") == filename for item in record["attachments"]):
+            continue
+        if match is not None:
+            raise AmbiguousMessage("More than one message matches the source details")
+        match = candidate
+    return match
+
+
 def context(db, message_id, neighbors, *, chat=None, timestamp=None, author=None):
     if not 0 <= neighbors <= 5:
         raise ValueError("Expected 0–5 neighbors")
     empty = {"message": None, "before": [], "after": []}
-    if message_id is not None:
+    if message_id is None:
+        try:
+            center = message_at(db, chat=chat, timestamp=timestamp, author=author)
+        except AmbiguousMessage:
+            return {**empty, "ambiguous": True}
+    else:
         if not re.fullmatch(r"[0-9a-f]{64}", message_id):
             raise ValueError("Invalid message ID")
         center = db.execute("SELECT * FROM messages WHERE id=? AND active=1 AND deleted=0",
                             (message_id,)).fetchone()
-    else:
-        if not chat or not timestamp:
-            raise ValueError("Provide the exact chat and timestamp from a search result")
-        candidates = db.execute("""
-            SELECT * FROM messages
-            WHERE timestamp=? AND active=1 AND deleted=0
-                AND COALESCE(NULLIF(json_extract(record, '$.chat'), ''), 'Чат без названия')=?
-        """, (utc(timestamp), chat))
-        center = None
-        for candidate in candidates:
-            location = message_location(json.loads(candidate["record"]))
-            if author is not None and location["author"] != author:
-                continue
-            if center is not None:
-                return {**empty, "ambiguous": True}
-            center = candidate
     if not center:
         return empty
     args = (center["chat_id"], center["timestamp"], center["id"], neighbors)

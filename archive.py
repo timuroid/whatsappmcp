@@ -112,6 +112,14 @@ def set_export_owner(db, chat_id, author):
     put_meta(db, "phone_export_owner:" + chat_id, export_author_key(author))
 
 
+def attachment_blob(state, item):
+    digest = item.get("digest")
+    if item.get("status") != "downloaded" or not isinstance(digest, str) or not re.fullmatch(r"[a-f0-9]{64}", digest):
+        return None
+    path = state / "blobs" / digest
+    return path if not path.is_symlink() and path.is_file() else None
+
+
 def save_attachment(state, source, item):
     result = {key: item.get(key) for key in ("filename", "mime", "size", "status")}
     location = item.get("path")

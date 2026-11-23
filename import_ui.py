@@ -26,7 +26,7 @@ from starlette.responses import FileResponse, HTMLResponse, JSONResponse, Redire
 from starlette.routing import Route
 
 from admin_access import ADMIN_LOGIN, COOKIE, SESSION_SECONDS, accepts_key, initialize_admin, is_admin, issue_session
-from archive import STATE, account_state, database, get_meta, index_pending_vectors
+from archive import STATE, account_state, attachment_blob, database, get_meta, index_pending_vectors
 from archive_hub import (
     AUTO_LINKS, AUTO_MATCHES, MATCH_PENDING, MATCH_REVIEW, POLL_INTERVAL, ArchiveHub, queue_match, read_state,
 )
@@ -565,11 +565,8 @@ def chat_attachment(request, state):
     if index >= len(attachments):
         raise HTTPException(404)
     item = attachments[index]
-    digest = item.get("digest", "")
-    if item["status"] != "downloaded" or not re.fullmatch(r"[a-f0-9]{64}", digest or ""):
-        raise HTTPException(404)
-    path = state / "blobs" / digest
-    if not path.is_file():
+    path = attachment_blob(state, item)
+    if path is None:
         raise HTTPException(404)
     filename = str(item.get("filename") or item.get("name") or "attachment").replace("\\", "/").rsplit("/", 1)[-1]
     return FileResponse(path, filename=filename, media_type="application/octet-stream", headers=PRIVATE)

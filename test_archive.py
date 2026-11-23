@@ -151,7 +151,8 @@ class ArchiveTest(unittest.TestCase):
         async with stdio_client(server) as (read, write), ClientSession(read, write) as client:
             await client.initialize()
             tools = (await client.list_tools()).tools
-            self.assertEqual({tool.name for tool in tools}, {"search_messages", "get_context", "archive_status"})
+            self.assertEqual({tool.name for tool in tools},
+                             {"search_messages", "get_image", "get_context", "archive_status"})
             self.assertTrue(all(tool.annotations.readOnlyHint for tool in tools))
             result = await client.call_tool("get_context", {"message_id": mid})
             self.assertFalse(result.isError, result.content)
