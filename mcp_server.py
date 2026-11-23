@@ -22,7 +22,7 @@ from ui_assets import asset
 app = FastMCP(
     "WhatsApp History",
     host="127.0.0.1",
-    port=8079,
+    port=9090,
     stateless_http=True,
     json_response=True,
     instructions=(
@@ -187,9 +187,9 @@ def protected_http():
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--http", action="store_true", help="listen on 127.0.0.1:8079/mcp")
+    parser.add_argument("--http", action="store_true", help="listen on 127.0.0.1:9090/mcp")
     args = parser.parse_args()
     if args.http:
-        uvicorn.run(protected_http(), host="127.0.0.1", port=8079, access_log=False)
+        uvicorn.run(protected_http(), host="127.0.0.1", port=9090, access_log=False)
     else:
         app.run(transport="stdio")

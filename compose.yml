@@ -1,0 +1,23 @@
+services:
+  ui:
+    build: .
+    container_name: whatsapp-ui
+    restart: unless-stopped
+    network_mode: host
+    env_file: .env
+    volumes:
+      - ${WA_HISTORY_STATE}:${WA_HISTORY_STATE}
+      - /var/run/docker.sock:/var/run/docker.sock
+
+  mcp:
+    build: .
+    container_name: whatsapp-mcp
+    restart: unless-stopped
+    network_mode: host
+    env_file: .env
+    volumes:
+      - ${WA_HISTORY_STATE}:${WA_HISTORY_STATE}
+    command:
+      - /app/.venv/bin/python
+      - mcp_server.py
+      - --http
