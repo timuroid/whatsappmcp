@@ -697,4 +697,4 @@ app = Starlette(routes=[
 ], lifespan=lifespan, middleware=[Middleware(TrustedHostMiddleware, allowed_hosts=admin_hosts())])
 
 if __name__ == "__main__":
-    uvicorn.run(app, host="127.0.0.1", port=8081, access_log=False)
+    uvicorn.run(app, host="127.0.0.1", port=9091, access_log=False)
