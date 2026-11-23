@@ -193,6 +193,14 @@ class PluginAccessTest(unittest.TestCase):
                         "params": {"name": "search_messages", "arguments": {"query": "entry"}}})
                     self.assertIn("Member entry", search.text)
                     self.assertNotIn("Archive entry", search.text)
+                    match = search.json()["result"]["structuredContent"]["matches"][0]
+                    self.assertNotIn("id", match)
+                    location = {field: match[field] for field in ("chat", "timestamp", "author")}
+                    result = client.post("/mcp", headers=bearer, json={"jsonrpc": "2.0", "id": 4, "method": "tools/call",
+                        "params": {"name": "get_context", "arguments": location}})
+                    message = result.json()["result"]["structuredContent"]["message"]
+                    self.assertEqual(message["text"], "Member entry")
+                    self.assertNotIn("id", message)
                     refreshed = admin.post(users_path, headers=origin, json={"action": "password",
                         "username": "test.user", "password": "A new test password"})
                     self.assertEqual(refreshed.status_code, 200)

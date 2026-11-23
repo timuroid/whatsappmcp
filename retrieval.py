@@ -74,6 +74,14 @@ def configured_embedder():
     return Embedder(model) if model else None
 
 
+def message_location(record, *, outgoing=False):
+    return {
+        "chat": record["chat"] or "Чат без названия",
+        "author": record["author"] or ("Владелец аккаунта" if outgoing or record["from_me"] else None),
+        "timestamp": record["timestamp"],
+    }
+
+
 def cite(db, row, query="", *, full=False, phone_owner=""):
     record = json.loads(row["record"])
     text = record.get("text") or record.get("caption") or ""
@@ -91,10 +99,8 @@ def cite(db, row, query="", *, full=False, phone_owner=""):
         attachments.append(entry)
     return {
         "id": row["id"],
-        "chat": record["chat"] or "Чат без названия",
-        "author": record["author"] or ("Владелец аккаунта" if outgoing else None),
+        **message_location(record, outgoing=outgoing),
         **({"from_me": outgoing} if full else {}),
-        "timestamp": record["timestamp"],
         "source": source,
         "text": text if full else excerpt(text, query, 1200),
         "edited": bool(record["edited"]),
@@ -196,13 +202,33 @@ def lookup(db, query, *, chat=None, after=None, before=None, limit=8, embedder=N
     }
 
 
-def context(db, message_id, neighbors):
-    if not re.fullmatch(r"[0-9a-f]{64}", message_id) or not 0 <= neighbors <= 5:
-        raise ValueError("Expected a source ID from search and 0–5 neighbors")
-    center = db.execute("SELECT * FROM messages WHERE id=? AND active=1 AND deleted=0",
-                        (message_id,)).fetchone()
+def context(db, message_id, neighbors, *, chat=None, timestamp=None, author=None):
+    if not 0 <= neighbors <= 5:
+        raise ValueError("Expected 0–5 neighbors")
+    empty = {"message": None, "before": [], "after": []}
+    if message_id is not None:
+        if not re.fullmatch(r"[0-9a-f]{64}", message_id):
+            raise ValueError("Invalid message ID")
+        center = db.execute("SELECT * FROM messages WHERE id=? AND active=1 AND deleted=0",
+                            (message_id,)).fetchone()
+    else:
+        if not chat or not timestamp:
+            raise ValueError("Provide the exact chat and timestamp from a search result")
+        candidates = db.execute("""
+            SELECT * FROM messages
+            WHERE timestamp=? AND active=1 AND deleted=0
+                AND COALESCE(NULLIF(json_extract(record, '$.chat'), ''), 'Чат без названия')=?
+        """, (utc(timestamp), chat))
+        center = None
+        for candidate in candidates:
+            location = message_location(json.loads(candidate["record"]))
+            if author is not None and location["author"] != author:
+                continue
+            if center is not None:
+                return {**empty, "ambiguous": True}
+            center = candidate
     if not center:
-        return {"message": None, "before": [], "after": []}
+        return empty
     args = (center["chat_id"], center["timestamp"], center["id"], neighbors)
     base = "SELECT * FROM messages WHERE active=1 AND deleted=0 AND chat_id=?"
     before = db.execute(base + " AND (timestamp,id)<(?,?) ORDER BY timestamp DESC,id DESC LIMIT ?", args)

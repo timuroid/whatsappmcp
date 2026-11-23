@@ -155,10 +155,22 @@ class ArchiveTest(unittest.TestCase):
             self.assertTrue(all(tool.annotations.readOnlyHint for tool in tools))
             result = await client.call_tool("get_context", {"message_id": mid})
             self.assertFalse(result.isError, result.content)
-            self.assertIsNotNone(result.structuredContent, result.content)
-            self.assertEqual(result.structuredContent["message"]["id"], mid)
-            result = await client.call_tool("search_messages", {"query": "841", "chat": "Снабжение"})
-            self.assertEqual(result.structuredContent["matches"][0]["id"], mid)
+            message = result.structuredContent["message"]
+            self.assertEqual(message["text"], "Привезём оборудование в пятницу.")
+            self.assertNotIn(mid, result.model_dump_json())
+            search = await client.call_tool("search_messages", {"query": "841", "chat": "Снабжение"})
+            self.assertFalse(search.isError, search.content)
+            self.assertNotIn(mid, search.model_dump_json())
+            first = search.structuredContent["matches"][0]
+            self.assertNotIn("id", first)
+            location = {field: first[field] for field in ("chat", "timestamp", "author")}
+            result = await client.call_tool("get_context", location)
+            self.assertFalse(result.isError, result.content)
+            self.assertEqual(result.structuredContent["message"], message)
+            reply = result.structuredContent["after"][0]
+            self.assertEqual(reply["reply_to"], location)
+            self.assertNotIn("reply_to_id", reply)
+            self.assertNotIn(mid, result.model_dump_json())
             result = await client.call_tool("archive_status", {})
             self.assertEqual(len(result.structuredContent["chats"]), 1)
 
@@ -174,7 +186,18 @@ class ArchiveTest(unittest.TestCase):
                 "params": {"name": "get_context", "arguments": {"message_id": mid}},
             })
             self.assertEqual(response.status_code, 200, response.text)
-            self.assertEqual(response.json()["result"]["structuredContent"]["message"]["id"], mid)
+            message = response.json()["result"]["structuredContent"]["message"]
+            self.assertEqual(message["chat"], "Снабжение")
+            self.assertNotIn("id", message)
+            self.assertNotIn(mid, response.text)
+
+    def test_context_by_source_does_not_guess_between_messages(self):
+        self.publish(self.row("m1", "Первое"), self.row("m2", "Второе"))
+        sync(self.source, self.state)
+        with database(self.state) as db:
+            result = context(db, None, 2, chat="Снабжение", timestamp="2026-11-23T10:00:00Z", author="Анна")
+        self.assertTrue(result["ambiguous"])
+        self.assertIsNone(result["message"])
 
     @unittest.skipUnless(os.environ.get("TEST_WHISPER_MODEL"), "local model not specified")
     def test_speech_is_searchable(self):
