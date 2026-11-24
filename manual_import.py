@@ -3,6 +3,7 @@
 import json
 import mimetypes
 import re
+import shutil
 import unicodedata
 import zipfile
 from collections import Counter
@@ -15,10 +16,13 @@ from archive import (
     write_message,
 )
 
-MAX_UPLOAD = 512 * 1024 * 1024
-MAX_TEXT = 64 * 1024 * 1024
-MAX_UNPACKED = 1024 * 1024 * 1024
-MAX_ENTRIES = 15000
+MAX_UPLOAD_GIB = 10
+MAX_TEXT_MIB = 64
+MAX_UNPACKED_GIB = 32
+MAX_UPLOAD = MAX_UPLOAD_GIB * 1024**3
+MAX_TEXT = MAX_TEXT_MIB * 1024**2
+MAX_UNPACKED = MAX_UNPACKED_GIB * 1024**3
+MAX_ENTRIES = 100_000
 DATE = r"\d{1,4}[./-]\d{1,2}[./-]\d{1,4}"
 TIME = r"\d{1,2}:\d{2}(?::\d{2})?(?:\s*[AP]\.?\s*M\.?)?"
 STAMP = rf"(?P<day>{DATE})[,\s]+(?P<clock>{TIME})"
@@ -115,7 +119,7 @@ def parse_body(timestamp, lines):
 def decode_text(reader):
     data = reader.read(MAX_TEXT + 1)
     if len(data) > MAX_TEXT:
-        raise ValueError("Текст чата превышает 64 МБ.")
+        raise ValueError(f"Текст чата превышает {MAX_TEXT_MIB} МиБ.")
     try:
         return data.decode("utf-8-sig")
     except UnicodeDecodeError as exc:
@@ -126,8 +130,10 @@ def zip_contents(archive):
     entries = [entry for entry in archive.infolist() if not entry.is_dir()
                and not entry.filename.startswith("__MACOSX/")
                and PurePosixPath(entry.filename).name != ".DS_Store"]
-    if len(entries) > MAX_ENTRIES or sum(entry.file_size for entry in entries) > MAX_UNPACKED:
-        raise ValueError("ZIP слишком большой. Лимит распакованных файлов — 1 ГБ.")
+    if len(entries) > MAX_ENTRIES:
+        raise ValueError(f"В ZIP больше {MAX_ENTRIES} файлов.")
+    if sum(entry.file_size for entry in entries) > MAX_UNPACKED:
+        raise ValueError(f"Распакованный ZIP превышает {MAX_UNPACKED_GIB} ГиБ.")
     text_entries = [entry for entry in entries if PurePosixPath(entry.filename).suffix.casefold() == ".txt"]
     chat = [entry for entry in text_entries if PurePosixPath(entry.filename).name.casefold() in TRANSCRIPT_NAMES]
     if not chat:
@@ -166,6 +172,10 @@ def import_file(state, reader, filename, *, name, target=None, order="dmy",
                 source_title = source_title or export_title(transcript.filename)
                 with archive.open(transcript) as content:
                     messages = list(parse_messages(decode_text(content), order, timezone))
+                if entries:
+                    state.mkdir(mode=0o700, parents=True, exist_ok=True)
+                    if sum(entry.file_size for entry in entries) > shutil.disk_usage(state).free:
+                        raise ValueError("На сервере недостаточно места для распаковки ZIP.")
                 media = save_media(archive, entries, state)
         else:
             raise ValueError("Выберите TXT или ZIP из WhatsApp.")

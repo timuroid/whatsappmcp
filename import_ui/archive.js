@@ -1279,14 +1279,18 @@ function importFields() {
 
 function selectFile() {
   const selected = file.files[0];
-  const error = selected?.size > 512 * 1024 * 1024 ? "Выберите файл до 512 МБ."
-    : selected && !/\.(zip|txt)$/i.test(selected.name) ? "Выберите TXT или ZIP из WhatsApp."
+  const isText = /\.txt$/i.test(selected?.name || "");
+  const maxSize = Number(isText ? file.dataset.maxText : file.dataset.maxZip);
+  const limit = isText ? file.dataset.maxTextLabel : file.dataset.maxZipLabel;
+  const error = selected && !/\.(zip|txt)$/i.test(selected.name) ? "Выберите TXT или ZIP из WhatsApp."
+    : selected?.size > maxSize ? `Выберите файл до ${limit}.`
     : selected?.size === 0 ? "Файл пуст." : "";
   file.setCustomValidity(error);
   setText("import-file-error", error);
   byId("import-file-error").hidden = !error;
   setText("file-label", selected ? "Заменить файл" : "Выберите файл WhatsApp");
-  setText("file-info", selected ? selected.name : "TXT или ZIP до 512 МБ");
+  setText("file-info", selected ? selected.name
+    : `ZIP до ${file.dataset.maxZipLabel} · TXT до ${file.dataset.maxTextLabel}`);
   if (selected && !error) {
     const name = titleFromFilename(selected.name);
     if (!importName.value || importName.value === suggestedName) importName.value = name;
@@ -1406,25 +1410,45 @@ async function refreshMemberSource(force = false) {
   }
 }
 
+function uploadMemberArchive(progress, percent) {
+  return new Promise((resolve, reject) => {
+    const request = new XMLHttpRequest();
+    request.open("POST", form.action);
+    request.setRequestHeader("Accept", "application/json");
+    request.responseType = "json";
+    request.upload.onprogress = (event) => {
+      if (event.lengthComputable) percent.value = 100 * event.loaded / event.total;
+    };
+    request.upload.onload = () => {
+      percent.hidden = true;
+      progress.textContent = "Файл загружен. Импортируем переписку и вложения…";
+    };
+    request.onload = () => resolve(request);
+    request.onerror = () => reject(new Error("Связь прервалась. Проверьте подключение и повторите импорт."));
+    request.send(new FormData(form));
+  });
+}
+
 async function importMemberChat() {
   const responseError = byId("import-response-error");
   const progress = byId("import-progress");
+  const percent = byId("import-upload-percent");
   importing = true;
   importButton.disabled = true;
   responseError.hidden = true;
-  progress.hidden = false;
+  progress.textContent = "Загружаем файл…";
+  progress.hidden = percent.hidden = false;
+  percent.value = 0;
   try {
-    const response = await fetch(form.action, {
-      method: "POST",
-      headers: { Accept: "application/json" },
-      body: new FormData(form),
-    });
+    const response = await uploadMemberArchive(progress, percent);
     if (response.status === 401) {
       window.location.replace("/login");
       return;
     }
-    const result = await response.json();
-    if (!response.ok) throw new Error(result.error || "Файл не импортирован. Попробуйте ещё раз.");
+    const result = response.response;
+    if (response.status !== 200 || !result?.chat_id) {
+      throw new Error(result?.error || "Файл не импортирован. Попробуйте ещё раз.");
+    }
     form.reset();
     importMode = "new";
     suggestedName = "";
@@ -1441,13 +1465,12 @@ async function importMemberChat() {
     }
     refreshMemberSource(true);
   } catch (error) {
-    setText("import-response-error", error instanceof SyntaxError
-      ? "Файл не импортирован. Попробуйте ещё раз." : error.message);
+    setText("import-response-error", error.message);
     responseError.hidden = false;
     responseError.scrollIntoView({ block: "nearest" });
   } finally {
     importing = false;
-    progress.hidden = true;
+    progress.hidden = percent.hidden = true;
     importFields();
     renderMemberUpload();
   }

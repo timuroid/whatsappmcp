@@ -4,7 +4,9 @@ import asyncio
 import json
 import os
 import re
+import shutil
 import sqlite3
+import tempfile
 from contextlib import asynccontextmanager, suppress
 from datetime import datetime
 from functools import lru_cache
@@ -30,7 +32,7 @@ from archive import STATE, account_state, attachment_blob, database, get_meta, i
 from archive_hub import (
     AUTO_LINKS, AUTO_MATCHES, MATCH_PENDING, MATCH_REVIEW, POLL_INTERVAL, ArchiveHub, queue_match, read_state,
 )
-from manual_import import MAX_UPLOAD, import_file
+from manual_import import MAX_TEXT, MAX_TEXT_MIB, MAX_UPLOAD, MAX_UPLOAD_GIB, import_file
 from plugin_access import AccessStore, LOCAL_ORIGIN, USER_COOKIE, USER_SESSION_SECONDS, mcp_origin, user_name
 from retrieval import EmbeddingUnavailable, configured_embedder, history_page
 from ui_assets import UI, asset
@@ -188,6 +190,8 @@ def page(*, result=None, error=None, form=None, status=200, view="home", admin=F
         view=view, admin=admin, member=None if owner == ADMIN_LOGIN else owner,
         admin_session=admin or owner == ADMIN_LOGIN, owner=owner,
         archive_users=AccessStore(STATE).users() if admin else [],
+        max_upload=MAX_UPLOAD, max_upload_label=f"{MAX_UPLOAD_GIB} ГиБ",
+        max_text=MAX_TEXT, max_text_label=f"{MAX_TEXT_MIB} МиБ",
     ), status_code=status, headers=PAGE_HEADERS)
 
 
@@ -304,17 +308,25 @@ async def upload(request):
         return await run_in_threadpool(page, error=error, result=result, form=values,
                                        status=status, view="manual", admin=admin, owner=owner)
 
-    length = request.headers.get("content-length", "")
-    if not length.isdigit() or int(length) > MAX_UPLOAD + 64 * 1024:
-        return await respond(error="Максимальный размер файла — 512 МБ.", status=413)
+    content_length = request.headers.get("content-length", "")
+    zip_limit_error = f"Максимальный размер ZIP — {MAX_UPLOAD_GIB} ГиБ."
+    if not content_length.isascii() or not content_length.isdigit():
+        return await respond(error="Не удалось определить размер загрузки.", status=411)
+    length = int(content_length)
+    if length > MAX_UPLOAD + 64 * 1024:
+        return await respond(error=zip_limit_error, status=413)
     try:
+        if length > shutil.disk_usage(tempfile.gettempdir()).free:
+            return await respond(error="На сервере недостаточно места для загрузки файла.", status=507)
         async with request.form(max_files=1, max_fields=6, max_part_size=4096) as fields:
             values = {key: str(fields.get(key, "")) for key in ("name", "target", "timezone", "order", "owner")}
             file = fields.get("file")
             if not isinstance(file, UploadFile) or not file.filename or not file.size:
                 raise ValueError("Выберите TXT или ZIP с телефона.")
             if file.size > MAX_UPLOAD:
-                raise ValueError("Максимальный размер файла — 512 МБ.")
+                return await respond(error=zip_limit_error, status=413)
+            if file.filename.lower().endswith(".txt") and file.size > MAX_TEXT:
+                return await respond(error=f"Максимальный размер TXT — {MAX_TEXT_MIB} МиБ.", status=413)
             result = await run_in_threadpool(
                 lambda: import_file(
                     state, file.file, file.filename, name=values["name"],

@@ -307,6 +307,7 @@ a.conversation-file:hover { border-color: var(--acc); }
 .member-match .field { margin-block: 10px 8px; }
 .member-match .chat-option small { text-align: end; }
 #archive-empty, #import-progress { color: var(--muted); margin-top: 9px; }
+#import-upload-percent { width: 100%; }
 .sr-only, .skip:not(:focus) { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
 .skip:focus { position: fixed; z-index: 2; left: 8px; top: 8px; padding: 8px 12px; background: var(--surface); }
 :focus-visible { outline: 3px solid var(--action); outline-offset: 3px; }

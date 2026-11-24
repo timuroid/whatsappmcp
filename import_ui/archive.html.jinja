@@ -101,8 +101,11 @@
     <label class="dropzone" id="dropzone">
       {{ icon('upload') }}
       <strong id="file-label">Выберите файл WhatsApp</strong>
-      <small id="file-info">TXT или ZIP до 512 МБ</small>
-      <input id="file" name="file" type="file" accept=".txt,.zip" aria-labelledby="file-label" aria-describedby="file-info import-file-error" required>
+      <small id="file-info">ZIP до {{ max_upload_label }} · TXT до {{ max_text_label }}</small>
+      <input id="file" name="file" type="file" accept=".txt,.zip"
+             data-max-zip="{{ max_upload }}" data-max-zip-label="{{ max_upload_label }}"
+             data-max-text="{{ max_text }}" data-max-text-label="{{ max_text_label }}"
+             aria-labelledby="file-label" aria-describedby="file-info import-file-error" required>
     </label>
     <p class="notice error" id="import-file-error" role="alert" hidden></p>
     <div id="import-fields" hidden>
@@ -138,6 +141,7 @@
     </details>
     <div class="actions"><button type="submit">Импортировать чат</button></div>
     <p id="import-progress" role="status" hidden>Импортируем переписку…</p>
+    <progress id="import-upload-percent" aria-label="Загрузка файла" max="100" hidden></progress>
     </div>
   </form>
   <dialog id="export-guide" aria-labelledby="export-guide-title">

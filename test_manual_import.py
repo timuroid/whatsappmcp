@@ -122,6 +122,35 @@ class PhoneExportTest(unittest.TestCase):
             self.assertEqual(client.post("/api/source/updates/group", headers=auth, json={"source": "111@g.us"}).status_code, 403)
             self.assertNotIn('id="group-panel"', client.get("/").text)
 
+    def test_zip_upload_size_and_expansion_limits(self):
+        zipped = io.BytesIO()
+        with zipfile.ZipFile(zipped, "w", compression=zipfile.ZIP_DEFLATED) as bundle:
+            bundle.writestr("_chat.txt", TRANSCRIPT)
+            bundle.writestr("PTT.ogg", b"0" * 4096)
+        payload = zipped.getvalue()
+        url = "http://127.0.0.1:8081"
+        with patch.object(import_ui, "STATE", self.state), TestClient(import_ui.app, base_url=url) as client:
+            key = (self.state / "admin.key").read_text().strip()
+            headers = {"Origin": url, "Accept": "application/json"}
+            client.post("/login", data={"username": "admin", "password": key}, headers=headers)
+            fields = {"name": "Тест ZIP", "timezone": "Europe/Moscow", "order": "dmy"}
+            files = {"file": ("phone.zip", payload, "application/zip")}
+            with patch.object(import_ui, "MAX_UPLOAD", len(payload) - 1):
+                result = client.post("/import", data=fields, files=files, headers=headers)
+                self.assertEqual(result.status_code, 413)
+            with patch.object(import_ui, "MAX_UPLOAD", len(payload)):
+                with patch("manual_import.MAX_UNPACKED", 4096):
+                    result = client.post("/import", data=fields, files=files, headers=headers)
+                    self.assertEqual(result.status_code, 422)
+                    self.assertIn("Распакованный ZIP", result.json()["error"])
+                result = client.post("/import", data=fields, files=files, headers=headers)
+                self.assertEqual(result.status_code, 200)
+                self.assertIn("chat_id", result.json())
+            with patch.object(import_ui, "MAX_TEXT", 1):
+                result = client.post("/import", data=fields, headers=headers,
+                                     files={"file": ("phone.txt", TRANSCRIPT.encode(), "text/plain")})
+                self.assertEqual(result.status_code, 413)
+
     def test_admin_history_pages_and_attachments(self):
         with io.BytesIO() as zipped:
             with zipfile.ZipFile(zipped, "w") as bundle:
