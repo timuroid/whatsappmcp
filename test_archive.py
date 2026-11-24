@@ -17,6 +17,7 @@ from mcp.client.stdio import stdio_client
 from starlette.testclient import TestClient
 
 from archive import database, identifier, index_pending_vectors, rebuild_embedding_index, sync, transcribe
+from archive_hub import ArchiveHub
 from retrieval import EmbeddingUnavailable, OpenAIEmbedder, configured_embedder, context, lookup
 
 
@@ -199,6 +200,15 @@ class ArchiveTest(unittest.TestCase):
             result = context(db, None, 2, chat="Снабжение", timestamp="2026-11-23T10:00:00Z", author="Анна")
         self.assertTrue(result["ambiguous"])
         self.assertIsNone(result["message"])
+
+    def test_deleted_chat_is_excluded_from_subsequent_snapshot_import(self):
+        self.publish(self.row("m1", "Удаляемое"), self.row("m2", "Доступное", chat="personal"))
+        self.assertEqual(sync(self.source, self.state)["indexed"], 2)
+        self.assertIsNotNone(ArchiveHub().delete_chat(self.state, "supply"))
+        self.assertEqual(sync(self.source, self.state)["indexed"], 0)
+        with database(self.state) as db:
+            self.assertFalse(lookup(db, "удаляемое")["matches"])
+            self.assertTrue(lookup(db, "доступное")["matches"])
 
     @unittest.skipUnless(os.environ.get("TEST_WHISPER_MODEL"), "local model not specified")
     def test_speech_is_searchable(self):

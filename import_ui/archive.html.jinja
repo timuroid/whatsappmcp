@@ -9,6 +9,7 @@
   {% elif name == 'arrow' %}<path d="M4 12h16m-6-6 6 6-6 6"/>
   {% elif name == 'back' %}<path d="M20 12H4m6 6-6-6 6-6"/>
   {% elif name == 'download' %}<path d="M12 4v12m-4-4 4 4 4-4M5 20h14"/>
+  {% elif name == 'trash' %}<path d="M4 7h16m-2 0-1 13H7L6 7m3 0V4h6v3m-5 4v5m4-5v5"/>
   {% elif name == 'check' %}<path d="m5 12 4 4L19 6"/>
   {% elif name == 'file' %}<path d="M6 3h8l4 4v14H6zm8 0v5h4m-9 5h6m-6 4h6"/>
   {% elif name == 'search' %}<circle cx="10.5" cy="10.5" r="5.5"/><path d="m15 15 5 5"/>
@@ -490,6 +491,7 @@
         <div class="{{ 'workspace' if admin else 'form-column' }}">
           <section class="panel">
             <h2>Чаты в архиве</h2>
+            <p id="archive-delete-notice" class="notice success" role="status" hidden></p>
             <p id="archive-empty"{% if chats %} hidden{% endif %}>Архив пока пуст. <a href="#manual">Импортируйте файл</a> с телефона.</p>
             <div id="archive-rows" class="archive-rows">
               {% for chat in chats %}
@@ -535,5 +537,15 @@
   {% else %}
   {% include "member-page.html.jinja" %}
   {% endif %}
+  <dialog id="delete-chat-dialog" aria-labelledby="delete-chat-heading" aria-describedby="delete-chat-description">
+    <h2 id="delete-chat-heading">Удалить чат из архива?</h2>
+    <p><strong id="delete-chat-name"></strong></p>
+    <p id="delete-chat-description">История исчезнет из архива и поиска ChatGPT. Автообновление выключится. Сам чат в WhatsApp останется.</p>
+    <p class="notice error" id="delete-chat-error" role="alert" hidden></p>
+    <form id="delete-chat-form" class="actions">
+      <button class="secondary" id="cancel-chat-deletion" type="button" autofocus>Отмена</button>
+      <button class="delete-confirm" type="submit" id="confirm-chat-deletion">Удалить навсегда</button>
+    </form>
+  </dialog>
 </body>
 </html>

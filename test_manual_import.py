@@ -10,7 +10,8 @@ from unittest.mock import patch
 from starlette.testclient import TestClient
 
 import import_ui
-from archive import database, sync
+from archive import account_state, database, digest, get_meta, put_meta, sync
+from archive_hub import AUTO_LINKS, AUTO_MATCHES, ArchiveHub
 from manual_import import import_file, parse_messages
 from plugin_access import AccessStore
 from retrieval import history_page, lookup
@@ -154,6 +155,92 @@ class PhoneExportTest(unittest.TestCase):
                 result = client.post("/import", data=fields, headers=headers,
                                      files={"file": ("phone.txt", TRANSCRIPT.encode(), "text/plain")})
                 self.assertEqual(result.status_code, 413)
+
+    def test_chat_deletion_is_scoped_and_purges_search_and_unshared_files(self):
+        access = AccessStore(self.state)
+        password = "A test password"
+        for user in ("alice", "bob"):
+            access.change_user("create", user, name=user, password=password)
+        alice = account_state(self.state, "alice")
+        bob = account_state(self.state, "bob")
+        with io.BytesIO() as zipped:
+            with zipfile.ZipFile(zipped, "w") as bundle:
+                bundle.writestr("_chat.txt", TRANSCRIPT)
+                bundle.writestr("PTT.ogg", b"shared")
+                bundle.writestr("extra.bin", b"unused")
+            data = zipped.getvalue()
+        chat = import_file(alice, io.BytesIO(data), "chat.zip", name="Удалить")["chat_id"]
+        import_file(bob, io.BytesIO(data), "chat.zip", name="Удалить")
+        with io.BytesIO() as zipped:
+            with zipfile.ZipFile(zipped, "w") as bundle:
+                bundle.writestr("_chat.txt", "15.05.19, 09:30 - Test: Другая папка")
+                bundle.writestr("PTT.ogg", b"shared")
+            keep = import_file(alice, io.BytesIO(zipped.getvalue()), "keep.zip", name="Оставить")["chat_id"]
+        with database(alice, writable=True) as db:
+            message = db.execute("SELECT id FROM messages WHERE chat_id=? LIMIT 1", (chat,)).fetchone()[0]
+            db.execute("INSERT INTO vectors VALUES (?, 0, X'00000000')", (message,))
+            db.execute("INSERT INTO pending_vectors VALUES (?, 'fixture')", (message,))
+            for checksum in (digest("shared"), digest("unused")):
+                db.execute("INSERT INTO transcripts VALUES (?, 'fixture')", (checksum,))
+            put_meta(db, AUTO_LINKS, {chat: {"enabled": True}})
+            put_meta(db, AUTO_MATCHES, {chat: {"status": "waiting"}})
+            put_meta(db, "live_selection", [{"id": chat}, {"id": keep}])
+            put_meta(db, "live_history:" + chat, {"latest": 1})
+            put_meta(db, "backfill:" + chat, {"pages": 1})
+
+        url = "http://127.0.0.1:8081"
+        headers = {"Origin": url}
+        member_delete = "/api/archive/delete"
+        admin_delete = "/api/admin/archive/delete?owner=bob"
+        with patch.object(import_ui, "STATE", self.state), TestClient(import_ui.app, base_url=url) as client:
+            self.assertEqual(client.post(member_delete, json={"chat": chat}, headers=headers).status_code, 401)
+            client.post("/login", data={"username": "alice", "password": password}, headers=headers)
+            self.assertEqual(client.post(member_delete, json={"chat": chat}).status_code, 403)
+            self.assertEqual(client.post(admin_delete, json={"chat": chat}, headers=headers).status_code, 403)
+            result = client.post(member_delete, json={"chat": chat}, headers=headers)
+            self.assertEqual(result.status_code, 200)
+            self.assertFalse(result.json()["pending_files"])
+            self.assertEqual([row["chat_id"] for row in client.get("/api/archive").json()["chats"]], [keep])
+            self.assertEqual(client.get("/api/archive/history", params={"chat": chat}).json()["messages"], [])
+            self.assertEqual(client.get("/api/archive/attachments/" + message + "/0").status_code, 404)
+            self.assertEqual(client.post(member_delete, json={"chat": chat}, headers=headers).status_code, 404)
+            self.assertTrue((bob / "blobs" / digest("unused")).is_file())
+            client.cookies.clear()
+            key = (self.state / "admin.key").read_text().strip()
+            client.post("/login", data={"username": "admin", "password": key}, headers=headers)
+            self.assertEqual(client.post(admin_delete, json={"chat": chat}, headers=headers).status_code, 200)
+            self.assertEqual(client.get("/api/admin/archive?owner=bob").json()["chats"], [])
+            self.assertFalse((bob / "blobs" / digest("unused")).exists())
+
+        self.assertTrue((alice / "blobs" / digest("shared")).is_file())
+        self.assertFalse((alice / "blobs" / digest("unused")).exists())
+        with database(alice) as db:
+            self.assertFalse(lookup(db, "компрессор")["matches"])
+            for table in ("messages", "terms", "vectors", "pending_vectors", "manual_messages"):
+                self.assertIsNone(db.execute(f"SELECT 1 FROM {table} WHERE id=?", (message,)).fetchone())
+            self.assertIsNone(db.execute("SELECT 1 FROM manual_files WHERE chat_id=?", (chat,)).fetchone())
+            self.assertEqual([row[0] for row in db.execute("SELECT digest FROM transcripts")], [digest("shared")])
+            self.assertEqual(get_meta(db, AUTO_LINKS), {})
+            self.assertEqual(get_meta(db, AUTO_MATCHES), {})
+            self.assertEqual(get_meta(db, "live_selection"), [{"id": keep}])
+            self.assertIsNone(get_meta(db, "live_history:" + chat))
+            self.assertIsNone(get_meta(db, "backfill:" + chat))
+
+    def test_chat_deletion_retries_file_cleanup(self):
+        with io.BytesIO() as zipped:
+            with zipfile.ZipFile(zipped, "w") as bundle:
+                bundle.writestr("_chat.txt", TRANSCRIPT)
+                bundle.writestr("PTT.ogg", b"obsolete")
+            chat = import_file(self.state, io.BytesIO(zipped.getvalue()), "chat.zip", name="Удалить")["chat_id"]
+        blob = self.state / "blobs" / digest("obsolete")
+        hub = ArchiveHub()
+        with hub.manual_import, self.assertRaisesRegex(ValueError, "Дождитесь"):
+            hub.delete_chat(self.state, chat)
+        with patch.object(Path, "unlink", side_effect=PermissionError):
+            self.assertTrue(hub.delete_chat(self.state, chat)["pending_files"])
+        self.assertTrue(blob.exists())
+        hub.poll(self.state)
+        self.assertFalse(blob.exists())
 
     def test_admin_history_pages_and_attachments(self):
         with io.BytesIO() as zipped:

@@ -16,6 +16,8 @@ from pathlib import Path
 from admin_access import ADMIN_LOGIN
 
 STATE = Path(os.environ.get("WA_HISTORY_STATE", Path(__file__).parent / "state"))
+SNAPSHOT_EXCLUSIONS = "excluded_snapshot_chats"
+DISCARDED_BLOBS = "discarded_blobs"
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS messages (
@@ -98,6 +100,59 @@ def get_meta(db, key):
 
 def put_meta(db, key, value):
     db.execute("INSERT OR REPLACE INTO meta VALUES (?, ?)", (key, json.dumps(value)))
+
+
+def remove_chat_records(db, chat_id):
+    checksums = {row[0] for row in db.execute("""
+        SELECT digest FROM manual_files WHERE chat_id=?
+        UNION
+        SELECT json_extract(a.value, '$.digest')
+        FROM messages m, json_each(m.record, '$.attachments') a
+        WHERE m.chat_id=?
+    """, (chat_id, chat_id)) if isinstance(row[0], str) and re.fullmatch(r"[a-f0-9]{64}", row[0])}
+    for table in ("vectors", "pending_vectors", "manual_messages"):
+        db.execute(f"DELETE FROM {table} WHERE id IN (SELECT id FROM messages WHERE chat_id=?)", (chat_id,))
+    db.execute("DELETE FROM terms WHERE rowid IN (SELECT rowid FROM messages WHERE chat_id=?)", (chat_id,))
+    db.execute("DELETE FROM manual_files WHERE chat_id=?", (chat_id,))
+    db.execute("DELETE FROM messages WHERE chat_id=?", (chat_id,))
+    db.executemany("DELETE FROM meta WHERE key=?", (
+        ("phone_export_owner:" + chat_id,), ("live_history:" + chat_id,), ("backfill:" + chat_id,),
+    ))
+    excluded = set(get_meta(db, SNAPSHOT_EXCLUSIONS) or [])
+    put_meta(db, SNAPSHOT_EXCLUSIONS, sorted(excluded | {digest(chat_id)}))
+    if checksums:
+        queued = set(get_meta(db, DISCARDED_BLOBS) or [])
+        put_meta(db, DISCARDED_BLOBS, sorted(queued | checksums))
+
+
+def purge_discarded_blobs(state):
+    with database(state, writable=True) as db:
+        db.execute("BEGIN IMMEDIATE")
+        queued = get_meta(db, DISCARDED_BLOBS) or []
+        if not queued:
+            return 0
+        selected = json.dumps(queued)
+        shared = {row[0] for row in db.execute("""
+            SELECT digest FROM manual_files WHERE digest IN (SELECT value FROM json_each(?))
+            UNION
+            SELECT json_extract(a.value, '$.digest')
+            FROM messages m, json_each(m.record, '$.attachments') a
+            WHERE json_extract(a.value, '$.digest') IN (SELECT value FROM json_each(?))
+        """, (selected, selected))}
+        disposable = [checksum for checksum in queued if checksum not in shared]
+        db.execute("DELETE FROM transcripts WHERE digest IN (SELECT value FROM json_each(?))",
+                   (json.dumps(disposable),))
+        retry = []
+        for checksum in disposable:
+            try:
+                (state / "blobs" / checksum).unlink(missing_ok=True)
+            except OSError:
+                retry.append(checksum)
+        if retry:
+            put_meta(db, DISCARDED_BLOBS, retry)
+        else:
+            db.execute("DELETE FROM meta WHERE key=?", (DISCARDED_BLOBS,))
+        return len(retry)
 
 
 def export_author_key(author):
@@ -326,13 +381,15 @@ def sync(source, state, embedder=None, *, chat_ids=None):
             raise ValueError("Use a separate index directory for another WhatsApp account")
         put_meta(db, "account", session["me"])
         prepare_index(db, embedder)
+        blocked = set(get_meta(db, SNAPSHOT_EXCLUSIONS) or [])
+        excluded = {chat_id for chat_id in expected if digest(chat_id) in blocked}
         db.execute("CREATE TEMP TABLE seen (id TEXT PRIMARY KEY)")
         pending = []
         for line in reader:
             record = json.loads(line)
             chat_id = record["chat_id"]
             counts[chat_id] = counts.get(chat_id, 0) + 1
-            if selection is not None and chat_id not in selection:
+            if chat_id in excluded or (selection is not None and chat_id not in selection):
                 continue
             mid = identifier(chat_id, record["message_id"])
             db.execute("INSERT INTO seen VALUES (?)", (mid,))
@@ -405,12 +462,14 @@ def transcribe(state, model_path, embedder=None):
             continue
         with database(state, writable=True) as db:
             db.execute("BEGIN IMMEDIATE")
-            db.execute("INSERT OR IGNORE INTO transcripts VALUES (?, ?)", (checksum, text))
             affected = db.execute("""
                 SELECT id, record FROM messages
                 WHERE EXISTS (SELECT 1 FROM json_each(record, '$.attachments')
                               WHERE json_extract(value, '$.digest')=?)
             """, (checksum,)).fetchall()
+            if not affected:
+                continue
+            db.execute("INSERT OR IGNORE INTO transcripts VALUES (?, ?)", (checksum, text))
             for message in affected:
                 reindex(db, [(message["id"], json.loads(message["record"]))], embedder)
         done += 1

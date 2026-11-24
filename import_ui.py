@@ -299,6 +299,7 @@ async def upload(request):
     admin = request.url.path == "/admin/import"
     owner = await run_in_threadpool(request_owner, request, admin=admin)
     state = account_state(STATE, owner)
+    archive_hub = source_hub(state)
     wants_json = not admin and request.headers.get("accept") == "application/json"
     values = {}
 
@@ -308,6 +309,22 @@ async def upload(request):
             return JSONResponse(payload, status_code=status, headers=PRIVATE)
         return await run_in_threadpool(page, error=error, result=result, form=values,
                                        status=status, view="manual", admin=admin, owner=owner)
+
+    def save_import(file, require_new):
+        with archive_hub.manual_import:
+            result = import_file(
+                state, file.file, file.filename, name=values["name"],
+                target=values["target"] or None, timezone=values["timezone"],
+                order=values["order"], embedder=configured_embedder(),
+                require_new=require_new, owner=values["owner"],
+            )
+            try:
+                result["sync_status"] = queue_match(
+                    state, result["chat_id"], result["source_title"] or result["chat"],
+                )
+            except sqlite3.Error:
+                result["sync_status"] = "review"
+            return result
 
     content_length = request.headers.get("content-length", "")
     zip_limit_error = f"Максимальный размер ZIP — {MAX_UPLOAD_GIB} ГиБ."
@@ -328,26 +345,13 @@ async def upload(request):
                 return await respond(error=zip_limit_error, status=413)
             if file.filename.lower().endswith(".txt") and file.size > MAX_TEXT:
                 return await respond(error=f"Максимальный размер TXT — {MAX_TEXT_MIB} МиБ.", status=413)
-            result = await run_in_threadpool(
-                lambda: import_file(
-                    state, file.file, file.filename, name=values["name"],
-                    target=values["target"] or None, timezone=values["timezone"],
-                    order=values["order"], embedder=configured_embedder(),
-                    require_new=fields.get("mode") == "new", owner=values["owner"],
-                )
-            )
+            result = await run_in_threadpool(save_import, file, fields.get("mode") == "new")
     except ValueError as exc:
         return await respond(error=str(exc), status=422)
     except (OSError, sqlite3.Error, HTTPException):
         return await respond(error="Не удалось завершить импорт. Проверьте файл и свободное место.", status=422)
-    try:
-        result["sync_status"] = await run_in_threadpool(
-            queue_match, state, result["chat_id"], result["source_title"] or result["chat"],
-        )
-    except sqlite3.Error:
-        result["sync_status"] = "review"
     response = await respond(result=result)
-    response.background = BackgroundTask(source_hub(state).poll, state)
+    response.background = BackgroundTask(archive_hub.poll, state)
     return response
 
 
@@ -532,6 +536,29 @@ def admin_archive_overview(request):
     return JSONResponse({"chats": chat_list(state)}, headers=PRIVATE)
 
 
+async def delete_archive_chat(request):
+    require_origin(request)
+    admin = request.url.path.startswith("/api/admin/")
+    state, archive_hub = await run_in_threadpool(source_for, request, admin=admin)
+    length = request.headers.get("content-length", "")
+    if not length.isdigit() or int(length) > 8192:
+        raise HTTPException(413)
+    try:
+        data = await request.json()
+        chat_id = data.get("chat") if isinstance(data, dict) else None
+        if not isinstance(chat_id, str) or not 1 <= len(chat_id) <= 256:
+            raise ValueError
+    except ValueError:
+        return JSONResponse({"error": "Выберите чат из архива."}, status_code=422, headers=PRIVATE)
+    try:
+        result = await run_in_threadpool(archive_hub.delete_chat, state, chat_id)
+    except ValueError as exc:
+        return JSONResponse({"error": str(exc)}, status_code=409, headers=PRIVATE)
+    if result is None:
+        return JSONResponse({"error": "Чат уже отсутствует в архиве."}, status_code=404, headers=PRIVATE)
+    return JSONResponse(result, headers=PRIVATE)
+
+
 async def manage_users(request):
     require_admin(request)
     store = AccessStore(STATE)
@@ -688,6 +715,7 @@ app = Starlette(routes=[
     Route("/admin/logout", member_logout, methods=["POST"]),
     Route("/api/admin/users", manage_users, methods=["GET", "POST"]),
     Route("/api/admin/archive", admin_archive_overview),
+    Route("/api/admin/archive/delete", delete_archive_chat, methods=["POST"]),
     Route("/api/admin/history", archive_read(chat_history, admin=True)),
     Route("/api/admin/attachments/{message_id}/{index:int}", archive_read(chat_attachment, admin=True)),
     Route("/export", export), Route("/assets/{name}", asset),
@@ -703,6 +731,7 @@ app = Starlette(routes=[
     Route("/api/source/backfill/qr", backfill_qr),
     Route("/api/source/updates/{action}", automatic_update, methods=["POST"]),
     Route("/api/archive", archive_overview),
+    Route("/api/archive/delete", delete_archive_chat, methods=["POST"]),
     Route("/api/archive/history", archive_read(chat_history)),
     Route("/api/archive/attachments/{message_id}/{index:int}", archive_read(chat_attachment)),
     Route("/api/plugin", plugin_status),

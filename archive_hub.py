@@ -7,11 +7,12 @@ import subprocess
 import threading
 import time
 import unicodedata
+from contextlib import contextmanager, suppress
 from datetime import datetime
 
 import httpx
 
-from archive import database, get_meta, prepare_index, put_meta
+from archive import DISCARDED_BLOBS, database, get_meta, prepare_index, purge_discarded_blobs, put_meta, remove_chat_records
 from backfill import backfill, pair_device
 from retrieval import configured_embedder
 from waha_source import OVERLAP, RESCAN, Waha, import_chat, initialize_waha, jid, utc_at
@@ -222,6 +223,7 @@ class ArchiveHub:
     def __init__(self, *, personal=False):
         self.personal = personal
         self.guard = threading.Lock()
+        self.manual_import = threading.Lock()
         self.job = None
         self.error = None
         self.error_job = None
@@ -234,6 +236,42 @@ class ArchiveHub:
 
     def connector(self, state):
         return Waha(state, personal=self.personal)
+
+    @contextmanager
+    def idle_archive(self):
+        with self.guard:
+            if self.job or not self.manual_import.acquire(blocking=False):
+                raise ValueError("Дождитесь окончания импорта или синхронизации и повторите удаление.")
+            try:
+                yield
+            finally:
+                self.manual_import.release()
+
+    def delete_chat(self, state, chat_id):
+        if not (state / "archive.sqlite3").is_file():
+            return None
+        with self.idle_archive():
+            with database(state, writable=True) as db:
+                db.execute("PRAGMA secure_delete=ON")
+                db.execute("BEGIN IMMEDIATE")
+                if not db.execute("SELECT 1 FROM messages WHERE chat_id=? LIMIT 1", (chat_id,)).fetchone():
+                    return None
+                remove_chat_records(db, chat_id)
+                for key in (AUTO_LINKS, AUTO_MATCHES):
+                    entries = get_meta(db, key) or {}
+                    if entries.pop(chat_id, None) is not None:
+                        put_meta(db, key, entries)
+                selection = get_meta(db, "live_selection") or []
+                remaining = [chat for chat in selection if chat["id"] != chat_id]
+                if len(remaining) != len(selection):
+                    put_meta(db, "live_selection", remaining)
+            self.data = {}
+            # Commit before touching files. A failed unlink can be retried by poll().
+            try:
+                pending = purge_discarded_blobs(state) > 0
+            except sqlite3.Error:
+                pending = True
+            return {"pending_files": pending}
 
     def launch(self, kind, fn):
         with self.guard:
@@ -429,7 +467,12 @@ class ArchiveHub:
         self.peer_qr = value
 
     def poll(self, state, *, preload=False):
-        if not (state / "waha.key").is_file() or self.job:
+        if self.job:
+            return
+        if read_state(state, DISCARDED_BLOBS):
+            with suppress(ValueError), self.idle_archive():
+                purge_discarded_blobs(state)
+        if not (state / "waha.key").is_file():
             return
         links = read_state(state, AUTO_LINKS) or {}
         now = time.time()

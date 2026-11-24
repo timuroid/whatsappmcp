@@ -154,7 +154,15 @@ async function loadArchive() {
       byId("history-query").value = "";
       loadHistory();
     });
-    row.append(link);
+    const actions = node("div", "");
+    actions.className = "actions chat-actions";
+    const remove = node("button", "Удалить");
+    remove.type = "button";
+    remove.className = "quiet";
+    remove.setAttribute("aria-label", "Удалить чат «" + chat.name + "» из архива");
+    remove.addEventListener("click", () => confirmChatDeletion(chat.chat_id, chat.name));
+    actions.append(link, remove);
+    row.append(actions);
     return row;
   }));
   const exportChat = byId("export-chat");
@@ -548,6 +556,57 @@ function showMemberChat(row) {
   setText("history-title", row.querySelector("[data-chat-name]").textContent);
   setText("conversation-meta", row.querySelector("[data-chat-meta]").textContent);
 }
+
+const deleteChatDialog = byId("delete-chat-dialog");
+const deleteChatButton = byId("confirm-chat-deletion");
+const cancelDeleteChat = byId("cancel-chat-deletion");
+const deleteChatError = byId("delete-chat-error");
+let chatToDelete = "";
+
+function confirmChatDeletion(chatId, name) {
+  chatToDelete = chatId;
+  setText("delete-chat-name", name);
+  deleteChatError.hidden = true;
+  deleteChatDialog.showModal();
+}
+
+byId("delete-member-chat")?.addEventListener("click", () => {
+  if (memberChat) confirmChatDeletion(memberChat.dataset.chatId, byId("history-title").textContent);
+});
+cancelDeleteChat.addEventListener("click", () => deleteChatDialog.close());
+deleteChatDialog.addEventListener("cancel", (event) => {
+  if (deleteChatButton.disabled) event.preventDefault();
+});
+byId("delete-chat-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (deleteChatButton.disabled) return;
+  deleteChatButton.disabled = cancelDeleteChat.disabled = true;
+  deleteChatError.hidden = true;
+  try {
+    const result = await api(isAdmin ? "admin/archive/delete" : "archive/delete", { chat: chatToDelete });
+    deleteChatDialog.close();
+    if (!isAdmin) {
+      history.replaceState(null, "", "#chats");
+      navigateMember();
+      byId("history-feed").replaceChildren();
+    }
+    try {
+      await (isAdmin ? loadArchive() : loadMemberChats());
+    } catch {
+      window.location.reload();
+      return;
+    }
+    if (!isAdmin) refreshMemberSource(true);
+    const notice = isAdmin ? "archive-delete-notice" : "member-notice";
+    setText(notice, result.pending_files ? "Чат удалён. Очистка файлов продолжится автоматически." : "Чат удалён из архива.");
+    byId(notice).hidden = false;
+  } catch (error) {
+    setText("delete-chat-error", error.message);
+    deleteChatError.hidden = false;
+  } finally {
+    deleteChatButton.disabled = cancelDeleteChat.disabled = false;
+  }
+});
 
 function navigateMember(event) {
   const hash = window.location.hash.slice(1);
