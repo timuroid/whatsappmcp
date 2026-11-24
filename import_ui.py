@@ -35,9 +35,10 @@ from archive_hub import (
 from manual_import import MAX_TEXT, MAX_TEXT_MIB, MAX_UPLOAD, MAX_UPLOAD_GIB, import_file
 from plugin_access import AccessStore, LOCAL_ORIGIN, USER_COOKIE, USER_SESSION_SECONDS, mcp_origin, user_name
 from retrieval import EmbeddingUnavailable, configured_embedder, history_page
-from ui_assets import UI, asset
+from ui_assets import UI, asset, asset_url
 
 templates = Environment(loader=FileSystemLoader(UI), autoescape=select_autoescape(["html", "html.jinja"]))
+templates.globals["asset_url"] = asset_url
 STATE = STATE.expanduser().resolve()
 hub = ArchiveHub()
 PRIVATE = {"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"}

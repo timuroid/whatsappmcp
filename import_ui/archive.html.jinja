@@ -233,8 +233,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>Архив WhatsApp</title>
   <link rel="icon" href="/assets/flame-circle.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="/assets/archive.css">
-  <script defer src="/assets/archive.js"></script>
+  <link rel="stylesheet" href="{{ asset_url('archive.css') }}">
+  <script defer src="{{ asset_url('archive.js') }}"></script>
 </head>
 <body data-view="{{ view }}" data-role="{{ 'admin' if admin else 'user' }}"
       data-admin-session="{{ 'true' if admin_session else 'false' }}"{% if admin %} data-archive-owner="{{ owner }}"{% endif %}>

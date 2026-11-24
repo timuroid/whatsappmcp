@@ -133,6 +133,10 @@ class PhoneExportTest(unittest.TestCase):
             key = (self.state / "admin.key").read_text().strip()
             headers = {"Origin": url, "Accept": "application/json"}
             client.post("/login", data={"username": "admin", "password": key}, headers=headers)
+            page = client.get("/")
+            script = re.search(r'src="(/assets/archive\.js\?v=[0-9a-f]{12})"', page.text)
+            self.assertIsNotNone(script)
+            self.assertEqual(client.get(script[1]).status_code, 200)
             fields = {"name": "Тест ZIP", "timezone": "Europe/Moscow", "order": "dmy"}
             files = {"file": ("phone.zip", payload, "application/zip")}
             with patch.object(import_ui, "MAX_UPLOAD", len(payload) - 1):
