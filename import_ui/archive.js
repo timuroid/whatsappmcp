@@ -355,11 +355,34 @@ function conversationAttachment(id, file, index) {
     card.setAttribute("aria-label", "Скачать " + name);
     card.append(byId("conversation-download-icon").content.cloneNode(true));
   }
-  if (!file.transcript_excerpt) return card;
   const attachment = node("div", "");
-  const transcript = node("details", "");
-  transcript.append(node("summary", "Расшифровка"), node("p", file.transcript_excerpt));
-  attachment.append(card, transcript);
+  attachment.className = "conversation-attachment";
+  if (downloaded) {
+    const previewUrl = new URL(card.href);
+    previewUrl.searchParams.set("preview", "1");
+    if (["image/png", "image/jpeg", "image/webp"].includes(file.mime) && file.size <= 8 * 1024 * 1024) {
+      const preview = node("img", "");
+      preview.className = "conversation-image";
+      preview.loading = "lazy";
+      preview.alt = name;
+      preview.src = previewUrl;
+      preview.addEventListener("error", () => preview.remove(), { once: true });
+      attachment.append(preview);
+    } else if (["audio/ogg", "audio/opus"].includes(file.mime)) {
+      const audio = node("audio", "");
+      audio.controls = true;
+      audio.preload = "none";
+      audio.src = previewUrl;
+      audio.setAttribute("aria-label", "Прослушать " + name);
+      attachment.append(audio);
+    }
+  }
+  attachment.append(card);
+  if (file.transcript_excerpt) {
+    const transcript = node("details", "");
+    transcript.append(node("summary", "Расшифровка"), node("p", file.transcript_excerpt));
+    attachment.append(transcript);
+  }
   return attachment;
 }
 

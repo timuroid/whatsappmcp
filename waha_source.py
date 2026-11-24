@@ -13,6 +13,7 @@ from urllib.parse import quote, unquote, urlsplit
 import httpx
 
 from archive import database, digest, identifier, prepare_index, reindex, save_blob, write_message
+from attachment_formats import EXTENSIONS, detect_mime
 
 BASE_URL = "http://127.0.0.1:3031"
 SESSION = "/api/sessions/default"
@@ -213,7 +214,13 @@ class Waha:
                         return {**item, "status": "too_large"}
                     file.write(chunk)
                 file.seek(0)
-                return {**item, "status": "downloaded", "size": size, "digest": save_blob(state, file)}
+                checksum = save_blob(state, file)
+                kind = detect_mime(state / "blobs" / checksum, item["mime"] or response.headers.get("Content-Type"))
+                filename = item["filename"] or "Вложение"
+                if not Path(filename).suffix:
+                    filename += EXTENSIONS.get(kind, "")
+                return {"filename": filename, "mime": kind, "status": "downloaded",
+                        "size": size, "digest": checksum}
         except httpx.HTTPError as exc:
             if isinstance(exc, httpx.HTTPStatusError) and exc.response.status_code in (404, 410):
                 return item
@@ -231,6 +238,10 @@ def from_waha(message, chat, attachments):
     data = message.get("_data") or {}
     info = data.get("Info") or {}
     content = data.get("Message") or {}
+    wrapper = content.get("documentWithCaptionMessage") or {}
+    content = wrapper.get("message") or content
+    caption = next((value.get("caption") for key in ("documentMessage", "imageMessage", "videoMessage")
+                    if isinstance(value := content.get(key), dict) and value.get("caption")), None)
     key = short_id(info.get("ID") or message.get("id"))
     author = info.get("PushName")
     mine = bool(message.get("fromMe", info.get("IsFromMe")))
@@ -242,7 +253,7 @@ def from_waha(message, chat, attachments):
         "chat_id": chat["id"], "chat": chat["name"], "message_id": key, "source": "waha",
         "author": None if mine else author or (chat["name"] if chat["kind"] == "direct" else None),
         "from_me": mine, "timestamp": utc_at(int(message["timestamp"])), "type": kind,
-        "text": message.get("body"), "caption": None, "attachments": attachments,
+        "text": caption or message.get("body"), "caption": None, "attachments": attachments,
         "reply_to": short_id((message.get("replyTo") or {}).get("id")),
         "edited": bool(message.get("edited")), "deleted": bool(message.get("deleted")),
     }

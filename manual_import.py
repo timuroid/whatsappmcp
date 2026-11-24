@@ -15,6 +15,7 @@ from archive import (
     database, digest, export_author_key, identifier, prepare_index, reindex, save_blob, set_export_owner, utc,
     write_message,
 )
+from attachment_formats import EXTENSIONS, detect_mime
 
 MAX_UPLOAD_GIB = 10
 MAX_TEXT_MIB = 64
@@ -112,7 +113,10 @@ def parse_body(timestamp, lines):
         if caption:
             legacy_text = text
         filename = PurePosixPath((match["marked_file"] or match["bare_file"]).replace("\\", "/")).name
-        text = "\n".join([caption or "", *lines[1:]]).strip()
+        placeholder = caption and caption.strip().casefold() == "без имени" and re.fullmatch(
+            r"\d{8}-без имени", filename, re.IGNORECASE,
+        )
+        text = "\n".join(["" if placeholder else caption or "", *lines[1:]]).strip()
     return timestamp, author, text, filename, legacy_text
 
 
@@ -143,16 +147,34 @@ def zip_contents(archive):
     return chat[0], [entry for entry in entries if entry is not chat[0]]
 
 
+def normalized_filename(name):
+    return unicodedata.normalize("NFC", name.translate(MARKS))
+
+
+def zip_filename(name, has_utf8_flag):
+    if not has_utf8_flag:
+        # Some iOS exports write UTF-8 names without the ZIP UTF-8 flag.
+        try:
+            name = name.encode("cp437").decode("utf-8")
+        except UnicodeError:
+            pass
+    return normalized_filename(name)
+
+
 def save_media(archive, entries, state):
     items = []
     for entry in entries:
-        filename = PurePosixPath(entry.filename.replace("\\", "/")).name
-        if not filename:
+        old_name = PurePosixPath(entry.filename.replace("\\", "/")).name
+        if not old_name:
             continue
+        export_name = zip_filename(old_name, entry.flag_bits & 0x800)
         with archive.open(entry) as reader:
             checksum = save_blob(state, reader)
-        items.append({"filename": filename, "mime": mimetypes.guess_type(filename)[0],
-                      "size": entry.file_size, "digest": checksum, "status": "downloaded"})
+        mime = detect_mime(state / "blobs" / checksum, mimetypes.guess_type(export_name)[0])
+        filename = export_name if PurePosixPath(export_name).suffix else export_name + EXTENSIONS.get(mime, "")
+        items.append((old_name, export_name,
+                      {"filename": filename, "mime": mime, "size": entry.file_size,
+                       "digest": checksum, "status": "downloaded"}))
     return items
 
 
@@ -191,8 +213,8 @@ def import_file(state, reader, filename, *, name, target=None, order="dmy",
     )):
         raise ValueError("Имя не найдено среди авторов. Укажите его так, как оно записано в файле.")
 
-    names = Counter(item["filename"] for item in media)
-    attachments = {item["filename"]: item for item in media if names[item["filename"]] == 1}
+    names = Counter(export_name for _, export_name, _ in media)
+    attachments = {export_name: item for _, export_name, item in media if names[export_name] == 1}
     used = set()
     seen = Counter()
     stats = {"new": 0, "updated": 0, "unchanged": 0, "files": len(media)}
@@ -220,23 +242,28 @@ def import_file(state, reader, filename, *, name, target=None, order="dmy",
             seen[key] += 1
             external_id = "export:" + digest(key + f":{seen[key]}")
             mid = identifier(chat_id, external_id)
-            attachment = attachments.get(original)
+            attachment = attachments.get(normalized_filename(original)) if original else None
             if attachment:
                 used.add((attachment["filename"], attachment["digest"]))
             prior = db.execute("SELECT record FROM messages WHERE id=?", (mid,)).fetchone()
-            if prior and not attachment:
+            previous = json.loads(prior["record"]) if prior else {}
+            if not attachment:
                 # An earlier ZIP can provide media absent from the later text export.
-                prior_items = json.loads(prior["record"])["attachments"]
+                prior_items = previous.get("attachments", [])
             else:
                 prior_items = []
             items = [attachment] if attachment else prior_items
             if original and not items:
                 items = [{"filename": original, "status": "missing_from_export"}]
+            mime = (items[0].get("mime") or "") if items else ""
+            kind = mime.split("/", 1)[0] if mime.startswith(("image/", "video/", "audio/")) else (
+                "document" if items else "text"
+            )
             record = {"chat_id": chat_id, "chat": name, "message_id": external_id,
                       "timestamp": timestamp, "author": author, "text": text, "attachments": items,
-                      "source": "phone_export", "from_me": False, "caption": None, "reply_to": None,
-                      "edited": False, "deleted": False, "type": "audio" if items and
-                      (items[0].get("mime") or "").startswith("audio/") else "text"}
+                      "source": "phone_export", "from_me": bool(previous.get("from_me")),
+                      "caption": previous.get("caption") if not text else None, "reply_to": None,
+                      "edited": False, "deleted": False, "type": kind}
             if write_message(db, mid, record):
                 db.execute("INSERT OR IGNORE INTO manual_messages VALUES (?)", (mid,))
                 batch.append((mid, record))
@@ -247,11 +274,14 @@ def import_file(state, reader, filename, *, name, target=None, order="dmy",
             else:
                 stats["unchanged"] += 1
         reindex(db, batch, embedder)
-        for item in media:
+        for old_name, _, item in media:
             key = (item["filename"], item["digest"])
+            if old_name != item["filename"]:
+                db.execute("DELETE FROM manual_files WHERE chat_id=? AND filename=? AND digest=? AND linked=0",
+                           (chat_id, old_name, item["digest"]))
             db.execute("""INSERT INTO manual_files VALUES (?, ?, ?, ?)
                           ON CONFLICT(chat_id, filename, digest) DO UPDATE SET linked=max(linked, excluded.linked)""",
                        (chat_id, *key, int(key in used)))
     return {**stats, "chat": name, "chat_id": chat_id, "source_title": source_title, "unmatched": len(media) - sum(
-        (item["filename"], item["digest"]) in used for item in media
+        (item["filename"], item["digest"]) in used for _, _, item in media
     ), "first": min(row[0] for row in messages), "last": max(row[0] for row in messages)}

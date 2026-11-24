@@ -81,6 +81,27 @@ class PhoneExportTest(unittest.TestCase):
         self.assertEqual(messages[0]["text"], "Фото насоса")
         self.assertEqual(messages[0]["attachments"][0]["filename"], "pump.jpg")
 
+    def test_ios_unnamed_file_matches_unflagged_utf8_zip_entry(self):
+        class UnflaggedName(zipfile.ZipInfo):
+            def _encodeFilenameFlags(self):
+                return self.filename.encode("utf-8"), self.flag_bits & ~0x800
+
+        name = "00000007-\u200eБез имени"
+        content = b"%PDF-1.3\n"
+        zipped = io.BytesIO()
+        with zipfile.ZipFile(zipped, "w") as bundle:
+            bundle.writestr("_chat.txt", f"\u200e[2026-09-28, 12:44:55] Анна: Без имени <прикреплено: {name}>")
+            bundle.writestr(UnflaggedName(name), content)
+        result = import_file(self.state, io.BytesIO(zipped.getvalue()), "chat.zip", name="Вложения")
+        self.assertEqual(result["unmatched"], 0)
+        with database(self.state) as db:
+            message = history_page(db, result["chat_id"])["messages"][0]
+        self.assertEqual(message["text"], "")
+        self.assertEqual(message["attachments"], [{
+            "filename": "00000007-Без имени.pdf", "status": "downloaded",
+            "mime": "application/pdf", "size": len(content),
+        }])
+
     def test_upload_link_and_export_for_year(self):
         with patch.object(import_ui, "STATE", self.state), TestClient(
             import_ui.app, base_url="http://127.0.0.1:8081",

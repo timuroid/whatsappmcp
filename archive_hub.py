@@ -17,7 +17,7 @@ from backfill import backfill, pair_device
 from retrieval import configured_embedder
 from waha_source import OVERLAP, RESCAN, Waha, import_chat, initialize_waha, jid, utc_at
 
-DEFAULT_INTERVAL = 86400
+DEFAULT_INTERVAL = 300
 INTERVAL = int(os.environ.get("WA_HISTORY_SYNC_INTERVAL_SECONDS", str(DEFAULT_INTERVAL)))
 if INTERVAL < 1:
     raise ValueError("WA_HISTORY_SYNC_INTERVAL_SECONDS должен быть положительным целым числом.")

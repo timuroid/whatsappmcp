@@ -32,6 +32,7 @@ from archive import STATE, account_state, attachment_blob, database, get_meta, i
 from archive_hub import (
     AUTO_LINKS, AUTO_MATCHES, MATCH_PENDING, MATCH_REVIEW, POLL_INTERVAL, ArchiveHub, queue_match, read_state,
 )
+from attachment_formats import preview_mime
 from manual_import import MAX_TEXT, MAX_TEXT_MIB, MAX_UPLOAD, MAX_UPLOAD_GIB, import_file
 from plugin_access import AccessStore, LOCAL_ORIGIN, USER_COOKIE, USER_SESSION_SECONDS, mcp_origin, user_name
 from retrieval import EmbeddingUnavailable, configured_embedder, history_page
@@ -45,7 +46,7 @@ PRIVATE = {"Cache-Control": "no-store", "X-Content-Type-Options": "nosniff"}
 PAGE_HEADERS = {
     **PRIVATE,
     "Content-Security-Policy": "default-src 'none'; style-src 'self'; font-src 'self'; script-src 'self'; "
-                               "connect-src 'self'; img-src 'self'; "
+                               "connect-src 'self'; img-src 'self'; media-src 'self'; "
                                "form-action 'self'; frame-ancestors 'none'; base-uri 'none'",
     "Referrer-Policy": "same-origin",
 }
@@ -609,6 +610,12 @@ def chat_attachment(request, state):
     if path is None:
         raise HTTPException(404)
     filename = str(item.get("filename") or item.get("name") or "attachment").replace("\\", "/").rsplit("/", 1)[-1]
+    if request.query_params.get("preview") == "1":
+        mime = preview_mime(path, item.get("mime"))
+        if not mime:
+            raise HTTPException(404)
+        return FileResponse(path, filename=filename, media_type=mime, headers=PRIVATE,
+                            content_disposition_type="inline")
     return FileResponse(path, filename=filename, media_type="application/octet-stream", headers=PRIVATE)
 
 

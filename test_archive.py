@@ -103,7 +103,8 @@ class ArchiveTest(unittest.TestCase):
     def test_incremental_scope_edits_and_mcp(self):
         data = b"item,count\ncompressor,3\n"
         attachment = self.make_attachment("m1", "order-841.csv", "text/csv", data)
-        first = self.row("m1", "Привезём оборудование в четверг.", attachments=[attachment])
+        note = self.make_attachment("m1", "note.txt", "text/plain", b"Packing instructions")
+        first = self.row("m1", "Привезём оборудование в четверг.", attachments=[attachment, note])
         private = self.row("m2", "Пароль для теста", chat="personal")
         self.publish(first, private)
         self.assertEqual(sync(self.source, self.state, self.embedder, chat_ids=["supply"])["indexed"], 1)
@@ -153,7 +154,7 @@ class ArchiveTest(unittest.TestCase):
             await client.initialize()
             tools = (await client.list_tools()).tools
             self.assertEqual({tool.name for tool in tools},
-                             {"search_messages", "get_image", "get_context", "archive_status"})
+                             {"search_messages", "get_image", "get_document", "get_context", "archive_status"})
             self.assertTrue(all(tool.annotations.readOnlyHint for tool in tools))
             result = await client.call_tool("get_context", {"message_id": mid})
             self.assertFalse(result.isError, result.content)
@@ -169,6 +170,9 @@ class ArchiveTest(unittest.TestCase):
             result = await client.call_tool("get_context", location)
             self.assertFalse(result.isError, result.content)
             self.assertEqual(result.structuredContent["message"], message)
+            document = await client.call_tool("get_document", {**location, "filename": "note.txt"})
+            self.assertFalse(document.isError, document.content)
+            self.assertEqual(document.structuredContent["text"], "Packing instructions")
             reply = result.structuredContent["after"][0]
             self.assertEqual(reply["reply_to"], location)
             self.assertNotIn("reply_to_id", reply)
